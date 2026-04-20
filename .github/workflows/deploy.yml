@@ -1,0 +1,106 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy-staging:
+    name: Build & Deploy (staging)
+    if: github.ref == 'refs/heads/staging'
+    runs-on:
+      - self-hosted
+      - ec2
+      - staging
+    environment: staging
+    env:
+      APP_DIR: /var/www/prajaakeeya-api-staging
+      PM2_NAME: prajaakeeya-api-staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install build dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to EC2
+        run: |
+          set -euo pipefail
+
+          sudo -n mkdir -p "$APP_DIR"
+          sudo -n chown -R deploy:deploy "$APP_DIR"
+
+          sudo -n -u deploy rm -rf "$APP_DIR/dist"
+          sudo -n -u deploy cp -r dist "$APP_DIR/"
+          sudo -n -u deploy cp package.json package-lock.json "$APP_DIR/"
+
+          sudo -n -u deploy bash -lc "cd '$APP_DIR' && npm ci --omit=dev"
+
+          command -v pm2 >/dev/null 2>&1 || sudo -n npm i -g pm2
+
+          sudo -n -u deploy bash -lc "cd '$APP_DIR' && pm2 describe $PM2_NAME >/dev/null 2>&1 && pm2 restart $PM2_NAME --update-env || pm2 start dist/main.js --name $PM2_NAME"
+
+          sudo -n -u deploy pm2 save
+
+  deploy-production:
+    name: Build & Deploy (production)
+    if: github.ref == 'refs/heads/main'
+    runs-on:
+      - self-hosted
+      - ec2
+      - production
+    environment: production
+    env:
+      APP_DIR: /var/www/prajaakeeya-api
+      PM2_NAME: prajaakeeya-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install build dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Deploy to EC2
+        run: |
+          set -euo pipefail
+
+          sudo -n mkdir -p "$APP_DIR"
+          sudo -n chown -R deploy:deploy "$APP_DIR"
+
+          sudo -n -u deploy rm -rf "$APP_DIR/dist"
+          sudo -n -u deploy cp -r dist "$APP_DIR/"
+          sudo -n -u deploy cp package.json package-lock.json "$APP_DIR/"
+
+          sudo -n -u deploy bash -lc "cd '$APP_DIR' && npm ci --omit=dev"
+
+          command -v pm2 >/dev/null 2>&1 || sudo -n npm i -g pm2
+
+          sudo -n -u deploy bash -lc "cd '$APP_DIR' && pm2 describe $PM2_NAME >/dev/null 2>&1 && pm2 restart $PM2_NAME --update-env || pm2 start dist/main.js --name $PM2_NAME"
+
+          sudo -n -u deploy pm2 save
