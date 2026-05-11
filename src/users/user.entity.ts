@@ -144,4 +144,8 @@ export class User extends BaseEntity {
     nullable: true,
   })
   gramPanchayatConstituencyId?: number;
+
+  // Bumped on logout/block/password-change to invalidate outstanding JWTs.
+  @Column({ name: "token_version", type: "int", default: 0 })
+  tokenVersion!: number;
 }
