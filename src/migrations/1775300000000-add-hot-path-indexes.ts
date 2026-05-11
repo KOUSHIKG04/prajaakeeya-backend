@@ -12,7 +12,10 @@ import { MigrationInterface, QueryRunner } from "typeorm";
 export class AddHotPathIndexes1775300000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const stmts = [
-      // Grama Panchayat composite (fixes 30k-row scans on dropdowns)
+      // Grama Panchayat composite (fixes 30k-row scans on dropdowns).
+      // Source of truth is the @Index decorator on GramaPanchayat entity;
+      // this CREATE IF NOT EXISTS just guarantees it exists on prod boxes
+      // that were running with synchronize off before this PR.
       `CREATE INDEX IF NOT EXISTS idx_gp_lookup
          ON grama_panchayat ("State", "District", "Taluk", "GP Name")`,
 
@@ -24,9 +27,10 @@ export class AddHotPathIndexes1775300000000 implements MigrationInterface {
       `CREATE INDEX IF NOT EXISTS idx_users_epic       ON users (epic_id)`,
       `CREATE INDEX IF NOT EXISTS idx_users_voter_epic ON users (voter_epic)`,
 
-      // Aspirants
-      `CREATE INDEX IF NOT EXISTS idx_aspirants_user
-         ON aspirants ("userId")`,
+      // Aspirants — idx_aspirants_user intentionally omitted: the entity
+      // declares @Index(["userId"], { unique: true }) which TypeORM
+      // materialises as a unique index. Adding our own would be redundant
+      // and waste write bandwidth on every aspirant insert.
       `CREATE INDEX IF NOT EXISTS idx_aspirants_ward
          ON aspirants ("wardId")`,
       `CREATE INDEX IF NOT EXISTS idx_aspirants_election
@@ -99,7 +103,7 @@ export class AddHotPathIndexes1775300000000 implements MigrationInterface {
       "idx_users_email",
       "idx_users_epic",
       "idx_users_voter_epic",
-      "idx_aspirants_user",
+      // "idx_aspirants_user" — never created (see up()), nothing to drop.
       "idx_aspirants_ward",
       "idx_aspirants_election",
       "idx_aspirants_constituency",

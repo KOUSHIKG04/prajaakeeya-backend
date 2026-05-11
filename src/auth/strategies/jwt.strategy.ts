@@ -1,4 +1,6 @@
-import { Injectable, UnauthorizedException } from "@nestjs/common";
+import { Inject, Injectable, UnauthorizedException } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import type { Cache } from "cache-manager";
 import { PassportStrategy } from "@nestjs/passport";
 import { ExtractJwt, Strategy } from "passport-jwt";
 
@@ -10,9 +12,20 @@ interface JwtPayload {
   tokenVersion?: number;
 }
 
+/**
+ * Build the Redis/in-memory cache key that holds the *current* tokenVersion
+ * for a given user. The cache is written when a user is blocked / unblocked /
+ * deleted (or any other "revoke all sessions" event), and read by this
+ * strategy on every authenticated request.
+ *
+ * Exported so other services can write to the same key.
+ */
+export const tokenVersionCacheKey = (userId: number) =>
+  `user:${userId}:tokenVersion`;
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor() {
+  constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -21,17 +34,28 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   // Returns the user identity straight from the JWT — avoids a DB lookup on
-  // every authenticated request. Revocation is handled via tokenVersion bumps,
-  // which are checked in a guard for state-changing routes when needed.
+  // every authenticated request. Revocation is enforced via a Redis-backed
+  // tokenVersion: when a user is blocked or otherwise has their sessions
+  // revoked, the new tokenVersion is written to the cache; this strategy
+  // rejects any JWT whose tokenVersion is older than the cached value.
   async validate(payload: JwtPayload) {
     if (payload.isBlocked) {
       throw new UnauthorizedException("User is blocked");
     }
+
+    const cached = await this.cache.get<number>(
+      tokenVersionCacheKey(payload.sub),
+    );
+    const presented = payload.tokenVersion ?? 0;
+    if (cached !== undefined && cached !== null && presented < Number(cached)) {
+      throw new UnauthorizedException("Session has been revoked");
+    }
+
     return {
       id: payload.sub,
       role: payload.role,
       wardId: payload.wardId,
-      tokenVersion: payload.tokenVersion ?? 0,
+      tokenVersion: presented,
     };
   }
 }

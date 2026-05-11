@@ -19,7 +19,9 @@ import {
 } from "@nestjs/swagger";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 import { Public } from "../common/decorators/public.decorator";
+import { Roles } from "../common/decorators/roles.decorator";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
+import { RolesGuard } from "../common/guards/roles.guard";
 import { AspirantsService } from "./aspirants.service";
 import { CreateAspirantDto } from "./dto/create-aspirant.dto";
 import { SetMeetingLinkDto } from "./dto/set-meeting-link.dto";
@@ -167,14 +169,18 @@ export class AspirantsController {
   }
 
   @Post("meeting")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Set meeting link for multiple aspirants" })
+  @ApiOperation({
+    summary: "Set meeting link for multiple aspirants (admin only)",
+  })
   @ApiResponse({
     status: 200,
     description: "Meeting links set successfully for all aspirants",
   })
   @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Admin role required" })
   @ApiResponse({ status: 404, description: "One or more aspirants not found" })
   setMeeting(@Body() dto: SetMeetingLinkDto) {
     return this.aspirantsService.setMeetingLinkForMultiple(
@@ -374,10 +380,13 @@ export class AspirantsController {
   }
 
   @Delete("meeting")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Delete multiple meetings by IDs" })
+  @ApiOperation({ summary: "Delete multiple meetings by IDs (admin only)" })
   @ApiResponse({ status: 200, description: "Meetings deleted successfully" })
+  @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Admin role required" })
   deleteMeetings(@Body() dto: DeleteMeetingsDto) {
     return this.aspirantsService.deleteMeetings(dto.meetingIds);
   }
@@ -492,9 +501,10 @@ export class AspirantsController {
   }
 
   @Patch(":id/approve")
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles("admin")
   @ApiBearerAuth()
-  @ApiOperation({ summary: "Approve an aspirant" })
+  @ApiOperation({ summary: "Approve an aspirant (admin only)" })
   @ApiParam({
     name: "id",
     type: "number",
@@ -502,8 +512,9 @@ export class AspirantsController {
     example: 5,
   })
   @ApiResponse({ status: 200, description: "Aspirant approved successfully" })
-  @ApiResponse({ status: 404, description: "Aspirant not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
+  @ApiResponse({ status: 403, description: "Admin role required" })
+  @ApiResponse({ status: 404, description: "Aspirant not found" })
   approve(@Param("id") id: number) {
     return this.aspirantsService.approve(Number(id));
   }

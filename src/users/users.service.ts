@@ -2,10 +2,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
 } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import type { Cache } from "cache-manager";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, DataSource, In } from "typeorm";
 import { S3Service } from "../common/services/s3.service";
+import { tokenVersionCacheKey } from "../auth/strategies/jwt.strategy";
 import { User } from "./user.entity";
 import { Report } from "./report.entity";
 import { UserSignedDocument } from "./user-signed-document.entity";
@@ -22,6 +26,30 @@ import { WardMeeting } from "../wards/ward-meeting.entity";
 import { UserAspirantInteraction } from "./user-aspirant-interaction.entity";
 
 type InteractionType = "chat" | "meeting" | "directMeet" | "phoneCall";
+
+/**
+ * Convert a JWT_EXPIRES_IN-style string (`"24h"`, `"7d"`, `"3600"`, `"15m"`)
+ * into milliseconds. Returns undefined for unrecognised input so callers can
+ * fall back to a sensible default.
+ */
+function parseTokenTtlMs(raw?: string): number | undefined {
+  if (!raw) return undefined;
+  const m = raw.match(/^(\d+)\s*([smhd]?)$/i);
+  if (!m) return undefined;
+  const n = Number(m[1]);
+  switch (m[2].toLowerCase()) {
+    case "s":
+      return n * 1000;
+    case "m":
+      return n * 60 * 1000;
+    case "h":
+      return n * 3600 * 1000;
+    case "d":
+      return n * 86400 * 1000;
+    default:
+      return n * 1000;
+  }
+}
 
 @Injectable()
 export class UsersService {
@@ -49,7 +77,33 @@ export class UsersService {
     private readonly wardMeetingRepo: Repository<WardMeeting>,
     private readonly dataSource: DataSource,
     private readonly s3Service: S3Service,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
+
+  /**
+   * Bump the user's tokenVersion and publish the new value to the cache so
+   * the JWT strategy rejects every JWT issued before this call. Used on
+   * block / unblock / hard-delete / soft-delete to enforce "logout
+   * everywhere" immediately rather than waiting for natural JWT expiry.
+   *
+   * The cache TTL matches the longest JWT lifetime: once every old token
+   * has expired naturally, the revocation marker is no longer needed.
+   */
+  private async revokeAllSessions(userId: number): Promise<number> {
+    const fresh = await this.repo
+      .createQueryBuilder()
+      .update(User)
+      .set({ tokenVersion: () => '"token_version" + 1' })
+      .where("id = :id", { id: userId })
+      .returning("token_version")
+      .execute();
+    const newVersion = Number(fresh.raw?.[0]?.token_version ?? 0);
+    // Default 24h matches the default JWT_EXPIRES_IN; if the env var is
+    // higher, this TTL is overridden so the marker outlives the JWT.
+    const ttlMs = parseTokenTtlMs(process.env.JWT_EXPIRES_IN) ?? 24 * 3600_000;
+    await this.cache.set(tokenVersionCacheKey(userId), newVersion, ttlMs);
+    return newVersion;
+  }
 
   findById(id: number) {
     return this.repo.findOne({ where: { id } });
@@ -501,7 +555,11 @@ export class UsersService {
     }
 
     user.isBlocked = true;
-    return this.repo.save(user);
+    const saved = await this.repo.save(user);
+    // Invalidate every JWT the blocked user is holding so they can't keep
+    // calling protected endpoints until their token naturally expires.
+    await this.revokeAllSessions(id).catch(() => undefined);
+    return saved;
   }
 
   async unblockUser(id: number): Promise<User> {
@@ -512,7 +570,12 @@ export class UsersService {
     }
 
     user.isBlocked = false;
-    return this.repo.save(user);
+    const saved = await this.repo.save(user);
+    // Bump tokenVersion on unblock too — any JWT minted before block had
+    // isBlocked=false in its payload, but we still want unblocked users
+    // re-authenticated cleanly with a fresh token.
+    await this.revokeAllSessions(id).catch(() => undefined);
+    return saved;
   }
 
   async deleteUser(id: number): Promise<void> {
@@ -845,6 +908,10 @@ export class UsersService {
       await queryRunner.query(`SET session_replication_role = 'origin'`);
 
       await queryRunner.commitTransaction();
+      // After a successful hard delete, evict the user's tokenVersion key so
+      // we don't leak cache entries for vanished users. (Their JWT is now
+      // worthless anyway because the user row is gone.)
+      await this.cache.del(tokenVersionCacheKey(userId)).catch(() => undefined);
       return { message: "Account permanently deleted" };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -863,6 +930,9 @@ export class UsersService {
 
       // Clear phone in aspirant table too
       await this.aspirantRepo.update({ userId }, { phone: null as any });
+
+      // Revoke every outstanding session for the soft-deleted user.
+      await this.revokeAllSessions(userId).catch(() => undefined);
 
       return { message: "Account deactivated" };
     } finally {
