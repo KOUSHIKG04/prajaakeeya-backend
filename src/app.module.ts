@@ -63,6 +63,8 @@ import { ElectionsModule } from "./elections/elections.module";
 import { Election } from "./elections/election.entity";
 import { GramaPanchayatModule } from "./grama-panchayat/grama-panchayat.module";
 import { GramaPanchayat } from "./grama-panchayat/grama-panchayat.entity";
+import { NotificationsModule } from "./notifications/notifications.module";
+import { Notification } from "./notifications/notification.entity";
 
 // Build a Redis connection URL from REDIS_HOST + REDIS_PORT. Returns undefined
 // when REDIS_HOST is not set, so callers fall back to in-memory storage.
@@ -188,6 +190,7 @@ function resolveRedisUrl(): string | undefined {
         HandRaise,
         Election,
         GramaPanchayat,
+        Notification,
       ],
     }),
 
@@ -209,6 +212,7 @@ function resolveRedisUrl(): string | undefined {
     IssuesModule,
     ElectionsModule,
     GramaPanchayatModule,
+    NotificationsModule,
     MediaModule,
   ],
   controllers: [HealthController],

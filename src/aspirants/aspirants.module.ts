@@ -13,6 +13,7 @@ import { AspirantsController } from "./aspirants.controller";
 import { UsersModule } from "../users/users.module";
 import { WardsModule } from "../wards/wards.module";
 import { ElectionsModule } from "../elections/elections.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { ElectionsModule } from "../elections/elections.module";
     UsersModule,
     WardsModule,
     ElectionsModule,
+    NotificationsModule,
     forwardRef(() => VotesModule),
   ],
   providers: [AspirantsService],
