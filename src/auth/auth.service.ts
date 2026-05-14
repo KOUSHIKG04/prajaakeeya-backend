@@ -660,13 +660,86 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /**
+   * Resolve the four constituency IDs the user saved on their profile
+   * (lok_sabha / state_assembly / municipal_corporation / gram_panchayat)
+   * into human-friendly names plus their parent hierarchy. For a ward
+   * (municipal corporation) this is the ward name + municipality (e.g.
+   * "Greater Bengaluru Authority(GBA) – Bengaluru"); for a village
+   * (gram panchayat) it's the village + GP + taluk + district.
+   *
+   * Failures on any single lookup don't block the others — the caller
+   * just gets `null` for that field's name.
+   */
+  private async resolveSavedConstituencies(user: User) {
+    const [lokSabha, stateAssembly, ward, village] = await Promise.all([
+      user.lokSabhaConstituencyId
+        ? this.parliamentaryService
+            .findOne(user.lokSabhaConstituencyId)
+            .catch(() => null)
+        : Promise.resolve(null),
+      user.stateAssemblyConstituencyId
+        ? this.assemblyService
+            .findOne(user.stateAssemblyConstituencyId)
+            .catch(() => null)
+        : Promise.resolve(null),
+      user.municipalCorporationConstituencyId
+        ? this.wardsService
+            .findOne(user.municipalCorporationConstituencyId)
+            .catch(() => null)
+        : Promise.resolve(null),
+      user.gramPanchayatConstituencyId
+        ? this.gramaPanchayatService
+            .findBySrNo(user.gramPanchayatConstituencyId)
+            .catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      lokSabhaConstituency: lokSabha
+        ? { id: lokSabha.id, name: lokSabha.name, state: lokSabha.state }
+        : null,
+      stateAssemblyConstituency: stateAssembly
+        ? {
+            id: stateAssembly.id,
+            name: stateAssembly.name,
+            state: stateAssembly.state,
+            parliamentary: stateAssembly.parliamentary,
+          }
+        : null,
+      municipalCorporationConstituency: ward
+        ? {
+            id: ward.id,
+            number: ward.number,
+            name: ward.name,
+            municipality: ward.municipality,
+            zone: ward.zone,
+            assembly: ward.assembly,
+            parliamentary: ward.parliamentary,
+            state: ward.state,
+            category: ward.category ?? null,
+          }
+        : null,
+      gramPanchayatConstituency: village
+        ? {
+            srNo: Number(village.srNo),
+            villageName: village.villageName,
+            gpName: village.gpName,
+            taluk: village.taluk,
+            district: village.district,
+            state: village.state,
+          }
+        : null,
+    };
+  }
+
   async profile(userId: number) {
     const user = await this.usersService.findById(userId);
     if (!user || user.isSelfDeleted) return null;
 
     // Run independent lookups concurrently. The aspirant lookup is only
     // meaningful for aspirant users; others get undefined.
-    const [aspirant, ward, hasVoted] = await Promise.all([
+    const [aspirant, ward, hasVoted, savedConstituencies] = await Promise.all([
       user.role === "aspirant"
         ? this.aspirantsService.findByUserId(user.id).catch(() => null)
         : Promise.resolve(null),
@@ -674,9 +747,10 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
         ? this.wardsService.findOne(user.wardId).catch(() => null)
         : Promise.resolve(null),
       this.votesService.hasUserVotedInActiveWindow(user.id).catch(() => false),
+      this.resolveSavedConstituencies(user),
     ]);
 
-    const result: any = { ...user };
+    const result: any = { ...user, ...savedConstituencies };
 
     if (ward) {
       result.wardNumber = ward.number;
