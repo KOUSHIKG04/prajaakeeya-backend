@@ -14,6 +14,7 @@ import { SetVotingWindowDto } from "./dto/set-voting-window.dto";
 import { UsersService } from "../users/users.service";
 import { WardsService } from "../wards/wards.service";
 import { AspirantsService } from "../aspirants/aspirants.service";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class VotesService {
@@ -25,6 +26,7 @@ export class VotesService {
     private readonly wardsService: WardsService,
     @Inject(forwardRef(() => AspirantsService))
     private readonly aspirantsService: AspirantsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async castVote(userId: number, dto: CastVoteDto) {
@@ -145,7 +147,26 @@ export class VotesService {
       isActive: true,
     });
 
-    return this.votingWindowRepo.save(window);
+    const saved = await this.votingWindowRepo.save(window);
+
+    // Fan out an in-app notification to every active user. Best-effort:
+    // notification failures must not block window creation.
+    try {
+      const withRelations = await this.votingWindowRepo.findOne({
+        where: { id: saved.id },
+        relations: ["election"],
+      });
+      await this.notificationsService.notifyVotingWindowOpened({
+        startTime: Number(saved.startTime),
+        endTime: Number(saved.endTime),
+        description: saved.description ?? null,
+        electionName: withRelations?.election?.name ?? null,
+      });
+    } catch {
+      /* best-effort */
+    }
+
+    return saved;
   }
 
   async getActiveVotingWindow() {

@@ -7,6 +7,7 @@ import { VotesController } from "./votes.controller";
 import { UsersModule } from "../users/users.module";
 import { WardsModule } from "../wards/wards.module";
 import { AspirantsModule } from "../aspirants/aspirants.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { AspirantsModule } from "../aspirants/aspirants.module";
     UsersModule,
     WardsModule,
     forwardRef(() => AspirantsModule),
+    NotificationsModule,
   ],
   providers: [VotesService],
   controllers: [VotesController],

@@ -6,14 +6,19 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 import { AspirantMessage } from "./aspirant-message.entity";
+import { Aspirant } from "./aspirant.entity";
 import { CreateAspirantMessageDto } from "./dto/create-aspirant-message.dto";
 import { GetAspirantMessagesDto } from "./dto/get-aspirant-messages.dto";
+import { NotificationsService } from "../notifications/notifications.service";
 
 @Injectable()
 export class AspirantChatService {
   constructor(
     @InjectRepository(AspirantMessage)
     private readonly repo: Repository<AspirantMessage>,
+    @InjectRepository(Aspirant)
+    private readonly aspirantRepo: Repository<Aspirant>,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createMessage(
@@ -26,7 +31,37 @@ export class AspirantChatService {
       userId,
       aspirantId,
     });
-    return this.repo.save(message);
+    const saved = await this.repo.save(message);
+
+    // Fan out a notification to every prior participant + the aspirant,
+    // excluding the sender. Best-effort: chat must not fail if the
+    // notification insert fails.
+    try {
+      const [aspirant, sender] = await Promise.all([
+        this.aspirantRepo.findOne({
+          where: { id: aspirantId },
+          relations: ["user"],
+        }),
+        this.repo.manager
+          .getRepository("User" as any)
+          .findOne({ where: { id: userId } as any })
+          .catch(() => null),
+      ]);
+      if (aspirant) {
+        await this.notificationsService.notifyAspirantChatMessage({
+          aspirantId,
+          aspirantUserId: aspirant.userId ?? null,
+          aspirantName: aspirant.name,
+          senderId: userId,
+          senderName: (sender as any)?.name ?? null,
+          content: dto.content,
+        });
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    return saved;
   }
 
   async getMessages(aspirantId: number, query: GetAspirantMessagesDto) {

@@ -6,7 +6,9 @@ export type NotificationType =
   | "new_aspirant"
   | "aspirant_meeting"
   | "aspirant_visit"
-  | "aspirant_event";
+  | "aspirant_event"
+  | "chat_message"
+  | "voting_window";
 
 @Index("idx_notifications_user_created", ["userId", "createdAt"])
 @Index("idx_notifications_user_unread", ["userId", "isRead"])

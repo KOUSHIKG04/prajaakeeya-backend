@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { Notification, NotificationType } from "./notification.entity";
+import { Notification } from "./notification.entity";
 import { Aspirant } from "../aspirants/aspirant.entity";
 import { AspirantMeeting } from "../aspirants/aspirant-meeting.entity";
 import { AspirantVisit } from "../aspirants/aspirant-visit.entity";
@@ -242,6 +242,124 @@ export class NotificationsService {
     } catch (err) {
       this.logger.error(
         `notifyAspirantVisit failed for aspirant ${aspirant.id}: ${(err as Error).message}`,
+      );
+      return { created: 0 };
+    }
+  }
+
+  /**
+   * Notify every prior participant in an aspirant's chat room (plus the
+   * aspirant themselves) about a new message. Recipients are the union
+   * of:
+   *   - distinct userIds who have ever posted in this chat
+   *   - the aspirant's own userId
+   * minus the sender.
+   */
+  async notifyAspirantChatMessage(args: {
+    aspirantId: number;
+    aspirantUserId?: number | null;
+    aspirantName: string;
+    senderId: number;
+    senderName?: string | null;
+    content: string;
+  }) {
+    try {
+      const rows = await this.repo.manager
+        .createQueryBuilder()
+        .select("DISTINCT m.user_id", "userId")
+        .from("aspirant_messages", "m")
+        .where("m.aspirant_id = :aspirantId", { aspirantId: args.aspirantId })
+        .andWhere("m.user_id != :senderId", { senderId: args.senderId })
+        .getRawMany();
+
+      const recipients = new Set<number>(rows.map((r) => Number(r.userId)));
+      if (args.aspirantUserId && args.aspirantUserId !== args.senderId) {
+        recipients.add(args.aspirantUserId);
+      }
+      if (!recipients.size) return { created: 0 };
+
+      // Drop blocked / self-deleted users from the final list.
+      const activeRows = await this.repo.manager
+        .createQueryBuilder()
+        .select("u.id", "id")
+        .from("users", "u")
+        .where("u.id IN (:...ids)", { ids: Array.from(recipients) })
+        .andWhere("u.is_blocked = false")
+        .andWhere("u.is_self_deleted = false")
+        .getRawMany();
+      const finalIds = activeRows.map((r) => Number(r.id));
+      if (!finalIds.length) return { created: 0 };
+
+      const senderLabel = args.senderName?.trim() || "Someone";
+      const preview =
+        args.content.length > 120
+          ? `${args.content.slice(0, 117)}…`
+          : args.content;
+      return this.fanOut(finalIds, {
+        type: "chat_message",
+        title: `New message in ${args.aspirantName}'s chat`,
+        body: `${senderLabel}: ${preview}`,
+        aspirantId: args.aspirantId,
+        aspirantName: args.aspirantName,
+        metadata: { senderId: args.senderId },
+      });
+    } catch (err) {
+      this.logger.error(
+        `notifyAspirantChatMessage failed for aspirant ${args.aspirantId}: ${(err as Error).message}`,
+      );
+      return { created: 0 };
+    }
+  }
+
+  /**
+   * Fan out a notification to every active user that a voting window
+   * has been opened/scheduled. Used when an admin sets a new window.
+   */
+  async notifyVotingWindowOpened(window: {
+    startTime: number;
+    endTime: number;
+    description?: string | null;
+    electionName?: string | null;
+  }) {
+    try {
+      const rows = await this.repo.manager
+        .createQueryBuilder()
+        .select("u.id", "id")
+        .from("users", "u")
+        .where("u.is_blocked = false")
+        .andWhere("u.is_self_deleted = false")
+        .getRawMany();
+      const recipients = rows.map((r) => Number(r.id));
+      if (!recipients.length) return { created: 0 };
+
+      const electionSuffix = window.electionName
+        ? ` for ${window.electionName}`
+        : "";
+      const startStr = new Date(window.startTime).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+      const endStr = new Date(window.endTime).toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        dateStyle: "medium",
+        timeStyle: "short",
+      });
+
+      return this.fanOut(recipients, {
+        type: "voting_window",
+        title: `Voting window opened${electionSuffix}`,
+        body: `Voting is open from ${startStr} to ${endStr}. Cast your vote before it closes.`,
+        metadata: {
+          startTime: window.startTime,
+          endTime: window.endTime,
+          description: window.description ?? null,
+          electionName: window.electionName ?? null,
+        },
+      });
+    } catch (err) {
+      this.logger.error(
+        `notifyVotingWindowOpened failed: ${(err as Error).message}`,
       );
       return { created: 0 };
     }
