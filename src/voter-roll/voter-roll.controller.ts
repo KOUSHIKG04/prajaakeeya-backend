@@ -23,6 +23,7 @@ import { WardsService } from "../wards/wards.service";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { memoryStorage } from "multer";
 import * as xlsx from "xlsx";
+import { MAX_UPLOAD_BYTES } from "../common/upload.constants";
 
 @ApiTags("Voter Roll")
 @Controller("voters")
@@ -117,7 +118,7 @@ export class VoterRollController {
   @UseInterceptors(
     FileInterceptor("file", {
       storage: memoryStorage(),
-      limits: { fileSize: 10 * 1024 * 1024, files: 1 }, // 10 MB
+      limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 },
       fileFilter: (_req, file, cb) => {
         if (!file.originalname.match(/\.(xlsx|xls)$/i)) {
           return cb(

@@ -22,6 +22,7 @@ import { join } from "path";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import type { Request } from "express";
 import { ExtractionService } from "../extraction/extraction.service";
+import { MAX_UPLOAD_BYTES } from "../common/upload.constants";
 
 @ApiTags("PDF Upload")
 @Controller("wards")
@@ -74,6 +75,7 @@ export class PdfUploadController {
           cb: (error: Error | null, filename: string) => void,
         ) => cb(null, `${Date.now()}-${file.originalname}`),
       }),
+      limits: { fileSize: MAX_UPLOAD_BYTES },
     }),
   )
   async upload(

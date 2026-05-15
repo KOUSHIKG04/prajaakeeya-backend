@@ -9,6 +9,7 @@ import { User } from "../users/user.entity";
 import { Aspirant } from "../aspirants/aspirant.entity";
 import { AdminDocument } from "../admin/admin-document.entity";
 import { UserSignedDocument } from "../users/user-signed-document.entity";
+import { MAX_UPLOAD_BYTES } from "./upload.constants";
 
 @Global()
 @Module({
@@ -22,7 +23,7 @@ import { UserSignedDocument } from "../users/user-signed-document.entity";
     ]),
     MulterModule.register({
       limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB limit
+        fileSize: MAX_UPLOAD_BYTES,
       },
     }),
   ],
