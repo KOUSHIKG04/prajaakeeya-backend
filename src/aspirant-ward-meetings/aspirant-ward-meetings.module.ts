@@ -4,9 +4,17 @@ import { AspirantWardMeetingsController } from "./aspirant-ward-meetings.control
 import { WardsModule } from "../wards/wards.module";
 import { AspirantsModule } from "../aspirants/aspirants.module";
 import { UsersModule } from "../users/users.module";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { ElectionsModule } from "../elections/elections.module";
 
 @Module({
-  imports: [WardsModule, AspirantsModule, UsersModule],
+  imports: [
+    WardsModule,
+    AspirantsModule,
+    UsersModule,
+    NotificationsModule,
+    ElectionsModule,
+  ],
   providers: [AspirantWardMeetingsService],
   controllers: [AspirantWardMeetingsController],
 })

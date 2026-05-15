@@ -7,6 +7,9 @@ import { WardsService } from "../wards/wards.service";
 import { AspirantsService } from "../aspirants/aspirants.service";
 import { UsersService } from "../users/users.service";
 import { CreateAspirantWardMeetingDto } from "./dto/create-aspirant-ward-meeting.dto";
+import { NotificationsService } from "../notifications/notifications.service";
+import { ElectionsService } from "../elections/elections.service";
+import { ElectionType } from "../elections/election.entity";
 
 @Injectable()
 export class AspirantWardMeetingsService {
@@ -14,6 +17,8 @@ export class AspirantWardMeetingsService {
     private readonly wardsService: WardsService,
     private readonly aspirantsService: AspirantsService,
     private readonly usersService: UsersService,
+    private readonly notificationsService: NotificationsService,
+    private readonly electionsService: ElectionsService,
   ) {}
 
   async createMeetingForAspirant(
@@ -35,7 +40,34 @@ export class AspirantWardMeetingsService {
       scheduledAt: dto.scheduledAt,
     };
 
-    return this.wardsService.createMeeting(payload as any, userId);
+    const meeting = await this.wardsService.createMeeting(payload as any, userId);
+
+    // Fan out an in-app notification to every user whose saved
+    // constituency matches the aspirant's. Best-effort: don't break the
+    // create flow if the lookup or insert fails.
+    try {
+      if (aspirant.electionId && aspirant.constituencyId) {
+        const election = await this.electionsService.findById(aspirant.electionId);
+        await this.notificationsService.notifyAspirantMeeting(
+          aspirant as any,
+          {
+            id: meeting.id,
+            title: meeting.title,
+            startTime: meeting.scheduledAt
+              ? new Date(meeting.scheduledAt).getTime()
+              : undefined,
+          },
+          {
+            electionType: election.type as ElectionType,
+            constituencyName: null,
+          },
+        );
+      }
+    } catch {
+      /* best-effort */
+    }
+
+    return meeting;
   }
 
   async getMeetingsForUserWard(userId: number) {
