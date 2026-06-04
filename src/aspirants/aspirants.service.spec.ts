@@ -20,6 +20,7 @@ function buildService(deps: Record<string, any> = {}): any {
     deps.visitResponseRepo ?? noop,
     deps.meetingResponseRepo ?? noop,
     deps.activityRatingRepo ?? noop,
+    deps.interactionRepo ?? noop,
     deps.usersService ?? noop,
     deps.wardsService ?? noop,
     deps.electionsService ?? noop,
@@ -60,7 +61,12 @@ describe("AspirantsService — contact privacy (findOne)", () => {
 
     jest
       .spyOn(service, "getActivityRatingsBulk")
-      .mockResolvedValue({ meetingRatings: {}, visitRatings: {}, overallRatings: {} });
+      .mockResolvedValue({
+        meetingRatings: {},
+        visitRatings: {},
+        contactRatings: {},
+        overallRatings: {},
+      });
     jest.spyOn(service, "getMeetingResponseCounts").mockResolvedValue(new Map());
     jest.spyOn(service, "getVisitResponseCounts").mockResolvedValue(new Map());
   });
@@ -229,5 +235,58 @@ describe("AspirantsService — withdrawAspirant()", () => {
     expect(result).toEqual(
       expect.objectContaining({ message: expect.stringContaining("withdrawn") }),
     );
+  });
+});
+
+describe("AspirantsService — rateContact()", () => {
+  it("rejects when the aspirant does not exist", async () => {
+    const service = buildService({ repo: { findOne: jest.fn(async () => null) } });
+    await expect(service.rateContact(54, 57, 5)).rejects.toThrow(NotFoundException);
+  });
+
+  it("rejects when the voter has not contacted the aspirant", async () => {
+    const service = buildService({
+      repo: { findOne: jest.fn(async () => ({ id: 54 })) },
+      interactionRepo: { findOne: jest.fn(async () => null) }, // never pressed
+    });
+    await expect(service.rateContact(54, 57, 5)).rejects.toThrow(
+      "only after contacting",
+    );
+  });
+
+  it("creates the rating when the voter has contacted and not yet rated", async () => {
+    const create = jest.fn((x: any) => x);
+    const save = jest.fn(async (x: any) => x);
+    const service = buildService({
+      repo: { findOne: jest.fn(async () => ({ id: 54 })) },
+      interactionRepo: { findOne: jest.fn(async () => ({ isPhoneCall: true })) },
+      activityRatingRepo: { findOne: jest.fn(async () => null), create, save },
+    });
+
+    await service.rateContact(54, 57, 5);
+
+    expect(create).toHaveBeenCalledWith({
+      type: "contact",
+      activityId: 54,
+      aspirantId: 54,
+      voterId: 57,
+      rating: 5,
+    });
+    expect(save).toHaveBeenCalled();
+  });
+
+  it("rejects a second rating (one-time only)", async () => {
+    const create = jest.fn();
+    const service = buildService({
+      repo: { findOne: jest.fn(async () => ({ id: 54 })) },
+      interactionRepo: { findOne: jest.fn(async () => ({ isPhoneCall: true })) },
+      activityRatingRepo: {
+        findOne: jest.fn(async () => ({ id: 1, rating: 4 })), // already rated
+        create,
+      },
+    });
+
+    await expect(service.rateContact(54, 57, 5)).rejects.toThrow("already rated");
+    expect(create).not.toHaveBeenCalled();
   });
 });

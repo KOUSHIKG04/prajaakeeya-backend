@@ -459,6 +459,31 @@ export class AspirantsController {
     );
   }
 
+  @Post(":aspirantId/contact/rate")
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: "Rate an aspirant's contact — phone + WhatsApp combined (1-5)",
+  })
+  @ApiParam({
+    name: "aspirantId",
+    type: "number",
+    description: "Aspirant ID",
+    example: 1,
+  })
+  @ApiResponse({ status: 201, description: "Contact rating saved" })
+  rateContact(
+    @CurrentUser() user: any,
+    @Param("aspirantId") aspirantId: string,
+    @Body() dto: RateActivityDto,
+  ) {
+    return this.aspirantsService.rateContact(
+      Number(aspirantId),
+      user.id,
+      dto.rating,
+    );
+  }
+
   @Patch(":id/permissions")
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
