@@ -145,9 +145,51 @@ export class NotificationsService {
       title: template.title ?? "Prajaakeeya",
       body: template.body ?? "",
       data: this.buildPushData(template),
+      link: this.buildDeepLink(template),
     });
 
     return { created };
+  }
+
+  /**
+   * Resolve the in-app deep-link path for a notification tap, from its type +
+   * ids. Mirrors the client routing (NotificationsPage.hrefFor / the service
+   * worker's resolveTarget). Always returns a path, falling back to the
+   * signed-in dashboard so every tap lands somewhere useful.
+   */
+  private buildDeepLink(t: Omit<Partial<Notification>, "userId">): string {
+    const aspirantId = t.aspirantId;
+    switch (t.type) {
+      case "new_aspirant":
+        return aspirantId
+          ? `/user/aspirants/${aspirantId}/view`
+          : "/user/aspirantslist";
+      case "chat_message":
+        return aspirantId ? `/user/chat/${aspirantId}` : "/user/aspirantslist";
+      case "voting_window": {
+        const name = (t.metadata as { electionName?: string } | null)?.electionName;
+        const slug = name
+          ? name.replace(/\(.*?\)/g, "").trim().toLowerCase().replace(/\s+/g, "_") ||
+            undefined
+          : undefined;
+        return slug ? `/user/aspirantslist?type=${slug}` : "/user/aspirantslist";
+      }
+      case "aspirant_meeting":
+      case "aspirant_visit":
+      case "aspirant_event":
+      case "meeting_reminder":
+      case "meeting_started":
+      case "visit_reminder":
+      case "visit_started": {
+        const params = new URLSearchParams();
+        if (t.electionId != null) params.set("electionId", String(t.electionId));
+        if (aspirantId != null) params.set("aspirantId", String(aspirantId));
+        const qs = params.toString();
+        return qs ? `/user/aspirantslist?${qs}` : "/user/aspirantslist";
+      }
+      default:
+        return "/user/dashboard";
+    }
   }
 
   /** Map a notification template's scalar fields into an FCM data payload

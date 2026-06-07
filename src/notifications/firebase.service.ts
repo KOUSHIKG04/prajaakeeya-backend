@@ -10,7 +10,9 @@ export interface PushPayload {
   body: string;
   /** FCM data values must be strings. Used by the service worker for routing. */
   data?: Record<string, string>;
-  /** Optional click-through URL (web push). */
+  /** In-app deep-link path for notification taps, e.g. "/user/chat/7221".
+   *  Sent as a relative path in data.link; resolved client-side against the
+   *  current origin (service worker / iOS bridge). */
   link?: string;
 }
 
@@ -139,20 +141,46 @@ export class FirebaseService implements OnModuleInit {
       const all = tokens.map((t) => t.token);
       const invalid: string[] = [];
 
+      // Deep link for notification taps, as a RELATIVE path in `data.link`
+      // (e.g. "/user/chat/7221"). The web service worker and the iOS native
+      // bridge each resolve it against the current origin, so the same payload
+      // works on staging, production and localhost with no absolute-URL config.
+      // We intentionally do NOT set webpush.fcm_options.link: the service
+      // worker's own notificationclick handler owns navigation, and a second
+      // (FCM-built-in) handler would double-open / conflict.
+      const data = {
+        ...(payload.data ?? {}),
+        ...(payload.link ? { link: payload.link } : {}),
+      };
+
       for (let i = 0; i < all.length; i += FCM_MULTICAST_LIMIT) {
         const batch = all.slice(i, i + FCM_MULTICAST_LIMIT);
         const res = await admin.messaging().sendEachForMulticast({
           tokens: batch,
           notification: { title: payload.title, body: payload.body },
-          data: payload.data ?? {},
+          data,
+          apns: {
+            headers: { "apns-priority": "10", "apns-push-type": "alert" },
+            payload: {
+              aps: {
+                alert: { title: payload.title, body: payload.body },
+                sound: "default",
+              },
+            },
+          },
           webpush: {
             notification: { title: payload.title, body: payload.body },
-            fcmOptions: payload.link ? { link: payload.link } : undefined,
           },
         });
         res.responses.forEach((r, idx) => {
-          if (!r.success && r.error && PRUNE_ERROR_CODES.has(r.error.code)) {
-            invalid.push(batch[idx]);
+          if (!r.success && r.error) {
+            // TEMPORARY DIAGNOSTIC: surface the real FCM error code. iOS-only
+            // non-delivery typically shows `messaging/third-party-auth-error`
+            // (= APNs key/.p8 not configured in Firebase). Remove once confirmed.
+            this.logger.warn(`FCM send failed: ${r.error.code}`);
+            if (PRUNE_ERROR_CODES.has(r.error.code)) {
+              invalid.push(batch[idx]);
+            }
           }
         });
       }
