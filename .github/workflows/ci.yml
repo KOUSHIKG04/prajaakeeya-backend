@@ -1,11 +1,10 @@
 name: CI
 
 on:
+  # PRs are validated here. Pushes to main/staging are validated by the
+  # `validate` gate inside deploy.yml (which the deploy jobs `needs:`), so we
+  # don't also run CI on push — that would double-validate every push.
   pull_request:
-    branches:
-      - main
-      - staging
-  push:
     branches:
       - main
       - staging
@@ -54,6 +53,9 @@ jobs:
 
       - name: Test
         run: npm test -- --runInBand
+
+      - name: E2E test (HTTP-level, no DB)
+        run: npm run test:e2e
 
       - name: Build
         run: npm run build

@@ -11,8 +11,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Gate: lint + typecheck + test + build must pass before either deploy job
+  # runs. Both deploy jobs declare `needs: validate`, so a single failing test
+  # here skips the deploy entirely — no broken build ever reaches EC2.
+  validate:
+    name: Validate (lint, typecheck, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Detect ESLint config
+        id: eslint_config
+        run: |
+          if [ -f .eslintrc ] || [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ] || [ -f .eslintrc.json ] || [ -f .eslintrc.yaml ] || [ -f .eslintrc.yml ] || [ -f eslint.config.js ] || [ -f eslint.config.cjs ] || [ -f eslint.config.mjs ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Lint
+        if: steps.eslint_config.outputs.present == 'true'
+        run: npm run lint:check
+
+      - name: Lint skipped (no ESLint config)
+        if: steps.eslint_config.outputs.present != 'true'
+        run: echo "Skipping lint because no ESLint config file exists in the repository."
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --runInBand
+
+      - name: E2E test (HTTP-level, no DB)
+        run: npm run test:e2e
+
+      - name: Build
+        run: npm run build
+
   deploy-staging:
     name: Build & Deploy (staging)
+    needs: validate
     if: github.ref == 'refs/heads/staging'
     runs-on:
       - self-hosted
@@ -63,6 +112,7 @@ jobs:
 
   deploy-production:
     name: Build & Deploy (production)
+    needs: validate
     if: github.ref == 'refs/heads/main'
     runs-on:
       - self-hosted
