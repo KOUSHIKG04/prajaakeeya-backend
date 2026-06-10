@@ -1,11 +1,10 @@
 name: CI
 
 on:
+  # PRs are validated here. Pushes to main/staging are validated by the
+  # `validate` gate inside deploy.yml (which the deploy jobs `needs:`), so we
+  # don't also run CI on push — that would double-validate every push.
   pull_request:
-    branches:
-      - main
-      - staging
-  push:
     branches:
       - main
       - staging
