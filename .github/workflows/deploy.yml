@@ -53,6 +53,9 @@ jobs:
       - name: Test
         run: npm test -- --runInBand
 
+      - name: E2E test (HTTP-level, no DB)
+        run: npm run test:e2e
+
       - name: Build
         run: npm run build
 
