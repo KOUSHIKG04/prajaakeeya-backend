@@ -43,7 +43,8 @@ export class MediaController {
   constructor(private readonly mediaService: MediaService) {}
 
   @Get("presign")
-  @ApiOperation({ summary: "Get presigned URL for private S3 object" })
+  @Roles("admin")
+  @ApiOperation({ summary: "Get presigned URL for private S3 object (admin only)" })
   @ApiQuery({
     name: "key",
     description: "S3 object key (e.g. profiles/20/file.jpg)",
