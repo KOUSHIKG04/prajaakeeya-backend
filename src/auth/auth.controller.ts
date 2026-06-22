@@ -19,31 +19,16 @@ import {
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
 import { VerifyOtpDto } from "./dto/verify-otp.dto";
-import { AspirantSendOtpDto } from "./dto/aspirant-send-otp.dto";
-import { AspirantVerifyOtpDto } from "./dto/aspirant-verify-otp.dto";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 
 // Tighter limits for auth endpoints to prevent brute-force / SMS-burn attacks.
-const AUTH_THROTTLE = { default: { ttl: 60_000, limit: 10 } };
 const STRICT_AUTH_THROTTLE = { default: { ttl: 60_000, limit: 5 } };
 
 @ApiTags("Authentication")
 @Controller("auth")
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
-
-  @Post("login")
-  @Throttle(AUTH_THROTTLE)
-  @ApiOperation({ summary: "Voter/aspirant login with EPIC ID (returns JWT)" })
-  @ApiResponse({
-    status: 201,
-    description: "Login successful, JWT returned",
-  })
-  @ApiResponse({ status: 404, description: "User not found" })
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
-  }
 
   @Post("admin/login")
   @Throttle(STRICT_AUTH_THROTTLE)
@@ -55,15 +40,6 @@ export class AuthController {
   @ApiResponse({ status: 404, description: "Admin not found" })
   adminLogin(@Body() dto: LoginDto) {
     return this.authService.adminLogin(dto);
-  }
-
-  @Post("verify-otp")
-  @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Verify OTP and get JWT token for voter" })
-  @ApiResponse({ status: 201, description: "OTP verified, JWT token returned" })
-  @ApiResponse({ status: 401, description: "Invalid OTP" })
-  verifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.verifyOtp(dto);
   }
 
   @Post("admin/verify-otp")
@@ -124,38 +100,5 @@ export class AuthController {
   @ApiResponse({ status: 401, description: "Unauthorized" })
   me(@CurrentUser() user: any) {
     return this.authService.profile(user.id);
-  }
-
-  @Post("aspirant/send-otp")
-  @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Send OTP to aspirant mobile number for login" })
-  @ApiResponse({
-    status: 201,
-    description: "OTP sent, verificationId returned",
-  })
-  @ApiResponse({ status: 404, description: "Aspirant not found" })
-  aspirantSendLoginOtp(@Body() dto: AspirantSendOtpDto) {
-    return this.authService.aspirantSendLoginOtp(dto);
-  }
-
-  @Post("aspirant/resend-otp")
-  @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Resend OTP to aspirant mobile number for login" })
-  @ApiResponse({
-    status: 200,
-    description: "OTP resent, verificationId returned",
-  })
-  @ApiResponse({ status: 404, description: "Aspirant not found" })
-  aspirantResendLoginOtp(@Body() dto: AspirantSendOtpDto) {
-    return this.authService.aspirantResendLoginOtp(dto);
-  }
-
-  @Post("aspirant/verify-otp")
-  @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Verify aspirant OTP and get JWT token" })
-  @ApiResponse({ status: 201, description: "OTP verified, JWT token returned" })
-  @ApiResponse({ status: 401, description: "Invalid OTP" })
-  aspirantVerifyLoginOtp(@Body() dto: AspirantVerifyOtpDto) {
-    return this.authService.aspirantVerifyLoginOtp(dto);
   }
 }

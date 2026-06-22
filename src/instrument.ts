@@ -18,9 +18,9 @@ Sentry.init({
   dsn,
   enabled: Boolean(dsn),
   environment: process.env.NODE_ENV || "development",
-  // Attaches request IP + user context to events (Sentry-recommended).
-  // Set to false if you'd rather not send IP addresses to Sentry.
-  sendDefaultPii: true,
+  // Do NOT attach request IP + user context to events. This is a voter-facing
+  // political app, so voter IPs/PII must not be shipped to a third party.
+  sendDefaultPii: false,
   // Fraction of requests sampled for performance tracing (0 = errors only).
   tracesSampleRate: process.env.SENTRY_TRACES_SAMPLE_RATE
     ? Number(process.env.SENTRY_TRACES_SAMPLE_RATE)

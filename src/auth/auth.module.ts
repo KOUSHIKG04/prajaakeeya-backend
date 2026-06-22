@@ -4,7 +4,6 @@ import { PassportModule } from "@nestjs/passport";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { UsersModule } from "../users/users.module";
 import { AspirantsModule } from "../aspirants/aspirants.module";
-import { VoterRollModule } from "../voter-roll/voter-roll.module";
 import { WardsModule } from "../wards/wards.module";
 import { VotesModule } from "../votes/votes.module";
 import { ElectionsModule } from "../elections/elections.module";
@@ -24,7 +23,6 @@ import { MessageCentralService } from "../common/services/message-central.servic
     ConfigModule,
     TypeOrmModule.forFeature([Otp]),
     UsersModule,
-    VoterRollModule,
     WardsModule,
     AspirantsModule,
     VotesModule,
@@ -38,6 +36,7 @@ import { MessageCentralService } from "../common/services/message-central.servic
       useFactory: (configService: ConfigService) => ({
         secret: configService.get<string>("JWT_SECRET"),
         signOptions: {
+          algorithm: "HS256",
           expiresIn: configService.get<string>("JWT_EXPIRES_IN") || "24h",
         },
       }),

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
   Inject,
 } from "@nestjs/common";
 import { CACHE_MANAGER } from "@nestjs/cache-manager";
@@ -176,6 +177,9 @@ export class UsersService {
 
   async upsertAdmin(email: string, name = "Admin User", password?: string) {
     let user = await this.repo.findOne({ where: { email } });
+    // Capture whether this account already had a password BEFORE we mutate it,
+    // so the seed helper can never be used to hijack an existing admin.
+    const existingHadPassword = !!user?.passwordHash;
     if (!user) {
       user = this.repo.create({ email, role: "admin" });
     }
@@ -199,8 +203,15 @@ export class UsersService {
     user.psLong = undefined;
     user.psLat = undefined;
 
-    // If password is provided, hash and set it
+    // If a password is provided, hash and set it — but NEVER overwrite the
+    // password of an account that already has one. Without this, the seed
+    // helper could be used to reset an existing administrator's credentials.
     if (password) {
+      if (existingHadPassword) {
+        throw new ConflictException(
+          "An account with this email already exists; refusing to overwrite its password via seed.",
+        );
+      }
       const crypto = await import("crypto");
       const { promisify } = await import("util");
       const scryptAsync = promisify(crypto.scrypt);

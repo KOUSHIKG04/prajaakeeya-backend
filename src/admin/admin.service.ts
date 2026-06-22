@@ -1,9 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { WardsService } from "../wards/wards.service";
-import { VoterRollService } from "../voter-roll/voter-roll.service";
 import { AspirantsService } from "../aspirants/aspirants.service";
 import { VotesService } from "../votes/votes.service";
-import { ExtractionService } from "../extraction/extraction.service";
 import { UsersService } from "../users/users.service";
 import { ElectionsService } from "../elections/elections.service";
 import { ParliamentaryService } from "../geography/parliamentary.service";
@@ -26,10 +24,8 @@ import { CreateGramaPanchayatDto } from "../grama-panchayat/dto/create-grama-pan
 export class AdminService {
   constructor(
     private readonly wardsService: WardsService,
-    private readonly voterRollService: VoterRollService,
     private readonly aspirantsService: AspirantsService,
     private readonly votesService: VotesService,
-    private readonly extractionService: ExtractionService,
     private readonly usersService: UsersService,
     private readonly electionsService: ElectionsService,
     private readonly parliamentaryService: ParliamentaryService,
@@ -39,29 +35,12 @@ export class AdminService {
   ) {}
 
   async dashboard() {
-    const [wards, voterCounts, aspirants, votes, extractionQueue] =
-      await Promise.all([
-        this.wardsService.findAll(),
-        this.voterRollService.wardCounts(),
-        this.aspirantsService.count(),
-        this.votesService.count(),
-        this.extractionService.getQueue(),
-      ]);
-
-    return {
-      totals: {
-        wards: wards.length,
-        voters: voterCounts.reduce((acc, curr) => acc + curr.total, 0),
-        aspirants,
-        votes,
-      },
-      wardStats: voterCounts.map((count) => ({
-        wardId: count.wardId,
-        wardName: wards.find((w) => w.id === count.wardId)?.name,
-        total: count.total,
-      })),
-      extractionQueue,
-    };
+    const [wards, aspirants, votes] = await Promise.all([
+      this.wardsService.findAll(),
+      this.aspirantsService.count(),
+      this.votesService.count(),
+    ]);
+    return { totals: { wards: wards.length, aspirants, votes } };
   }
 
   async getAllReports(status?: string, page?: number, limit?: number) {
@@ -141,36 +120,6 @@ export class AdminService {
     return this.wardsService.deleteMeeting(id);
   }
 
-  async getVoterCounts(wardNumbers?: string) {
-    // Resolve ward list: either provided ward numbers or all wards
-    let wardsList;
-    if (wardNumbers) {
-      const numbers = wardNumbers
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-      // findByNumber will throw NotFoundException if a ward number is invalid
-      wardsList = await Promise.all(
-        numbers.map((n) => this.wardsService.findByNumber(n)),
-      );
-    } else {
-      wardsList = await this.wardsService.findAll();
-    }
-
-    const wardIds = wardsList.map((w) => w.id);
-    const registeredCounts = await this.usersService.voterCounts(
-      wardIds.length ? wardIds : undefined,
-    );
-    const regMap = new Map(registeredCounts.map((c) => [c.wardId, c.total]));
-
-    return wardsList.map((w) => ({
-      wardId: w.id,
-      wardNumber: w.number,
-      wardName: w.name,
-      total: regMap.get(w.id) ?? 0,
-    }));
-  }
-
   // Election Management
   async createElection(dto: CreateElectionDto) {
     return this.electionsService.createElection(dto);
@@ -180,9 +129,12 @@ export class AdminService {
     return this.electionsService.updateElection(id, dto);
   }
 
-  async deleteElection(id: number) {
-    return this.electionsService.deleteElection(id);
-  }
+  // DELETE disabled per request — commented, not removed. Destructive deletion
+  // of reference data (audit C3 / the election-deletion incident). Re-enable
+  // only with admin RBAC + soft-delete + audit logging.
+  // async deleteElection(id: number) {
+  //   return this.electionsService.deleteElection(id);
+  // }
 
   // Parliamentary Constituency Management
   async createParliamentary(dto: CreateParliamentaryDto) {
@@ -193,9 +145,10 @@ export class AdminService {
     return this.parliamentaryService.update(id, dto);
   }
 
-  async deleteParliamentary(id: number) {
-    return this.parliamentaryService.delete(id);
-  }
+  // DELETE disabled per request — commented, not removed (audit C3).
+  // async deleteParliamentary(id: number) {
+  //   return this.parliamentaryService.delete(id);
+  // }
 
   // Assembly Constituency Management
   async createAssembly(dto: CreateAssemblyDto) {
@@ -206,9 +159,10 @@ export class AdminService {
     return this.assemblyService.update(id, dto);
   }
 
-  async deleteAssembly(id: number) {
-    return this.assemblyService.delete(id);
-  }
+  // DELETE disabled per request — commented, not removed (audit C3).
+  // async deleteAssembly(id: number) {
+  //   return this.assemblyService.delete(id);
+  // }
 
   // Municipality Management
   async getMunicipalities(state?: string) {
@@ -223,9 +177,10 @@ export class AdminService {
     return this.municipalityService.update(id, dto);
   }
 
-  async deleteMunicipality(id: number) {
-    return this.municipalityService.delete(id);
-  }
+  // DELETE disabled per request — commented, not removed (audit C3).
+  // async deleteMunicipality(id: number) {
+  //   return this.municipalityService.delete(id);
+  // }
 
   // Ward Management
   async createWard(dto: CreateWardDto) {
@@ -236,9 +191,10 @@ export class AdminService {
     return this.wardsService.update(id, dto);
   }
 
-  async deleteWard(id: number) {
-    return this.wardsService.delete(id);
-  }
+  // DELETE disabled per request — commented, not removed (audit C3).
+  // async deleteWard(id: number) {
+  //   return this.wardsService.delete(id);
+  // }
 
   // Grama Panchayat Management
   async createGramaPanchayat(dto: CreateGramaPanchayatDto) {

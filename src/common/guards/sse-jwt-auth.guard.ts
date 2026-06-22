@@ -1,10 +1,14 @@
 import {
   CanActivate,
   ExecutionContext,
+  Inject,
   Injectable,
   UnauthorizedException,
 } from "@nestjs/common";
+import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import type { Cache } from "cache-manager";
 import { JwtService } from "@nestjs/jwt";
+import { tokenVersionCacheKey } from "../../auth/strategies/jwt.strategy";
 
 /**
  * Auth guard for Server-Sent Events routes.
@@ -16,16 +20,18 @@ import { JwtService } from "@nestjs/jwt";
  * It also sets `X-Accel-Buffering: no` so SSE bytes stream immediately through
  * buffering proxies (nginx / ALB).
  *
- * NOTE: this verifies signature + expiry only — it does NOT run the Redis
- * `tokenVersion` revocation check used by the main JwtStrategy. That is an
- * acceptable trade-off for a read-only chat stream (a revoked token keeps
- * receiving messages only until the connection drops or the token expires).
+ * Mirrors `JwtStrategy`: signature + expiry are pinned to HS256, and the same
+ * `isBlocked` / Redis `tokenVersion` revocation checks run so a blocked or
+ * revoked user cannot hold an SSE stream open until the token expires.
  */
 @Injectable()
 export class SseJwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
     const res = context.switchToHttp().getResponse();
     res.setHeader("X-Accel-Buffering", "no");
@@ -37,18 +43,33 @@ export class SseJwtAuthGuard implements CanActivate {
 
     if (!token) throw new UnauthorizedException("Missing token");
 
+    let payload: any;
     try {
-      const payload: any = this.jwtService.verify(token, {
+      payload = this.jwtService.verify(token, {
         secret: process.env.JWT_SECRET,
+        algorithms: ["HS256"],
       });
-      req.user = {
-        id: payload.sub,
-        role: payload.role,
-        wardId: payload.wardId,
-      };
-      return true;
     } catch {
       throw new UnauthorizedException("Invalid or expired token");
     }
+
+    // Revocation checks, identical to JwtStrategy.validate().
+    if (payload.isBlocked) {
+      throw new UnauthorizedException("User is blocked");
+    }
+    const cached = await this.cache.get<number>(
+      tokenVersionCacheKey(payload.sub),
+    );
+    const presented = payload.tokenVersion ?? 0;
+    if (cached !== undefined && cached !== null && presented < Number(cached)) {
+      throw new UnauthorizedException("Session has been revoked");
+    }
+
+    req.user = {
+      id: payload.sub,
+      role: payload.role,
+      wardId: payload.wardId,
+    };
+    return true;
   }
 }

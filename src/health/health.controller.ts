@@ -29,13 +29,4 @@ export class HealthController {
       database: dbStatus,
     };
   }
-
-  // TEMPORARY — verifies Sentry is capturing errors. Throws on purpose so the
-  // resulting 500 is reported to Sentry. Remove once you've confirmed the event
-  // appears in the Sentry dashboard.
-  @Get("debug-sentry")
-  @ApiOperation({ summary: "TEST: throws an error to verify Sentry capture" })
-  getError() {
-    throw new Error("My first Sentry error!");
-  }
 }

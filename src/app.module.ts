@@ -16,13 +16,9 @@ import { validate } from "./config/env.validation";
 import { AuthModule } from "./auth/auth.module";
 import { UsersModule } from "./users/users.module";
 import { WardsModule } from "./wards/wards.module";
-import { VoterRollModule } from "./voter-roll/voter-roll.module";
 import { AspirantsModule } from "./aspirants/aspirants.module";
 import { VotesModule } from "./votes/votes.module";
 import { AdminModule } from "./admin/admin.module";
-import { ExtractionModule } from "./extraction/extraction.module";
-import { VerificationModule } from "./verification/verification.module";
-import { PdfUploadModule } from "./pdf-upload/pdf-upload.module";
 import { ForumModule } from "./forum/forum.module";
 import { GeographyModule } from "./geography/geography.module";
 import { AspirantChatModule } from "./aspirants/aspirant-chat.module";
@@ -31,7 +27,6 @@ import { HealthController } from "./health/health.controller";
 
 import { User } from "./users/user.entity";
 import { Ward } from "./wards/ward.entity";
-import { Voter } from "./voter-roll/voter.entity";
 import { Aspirant } from "./aspirants/aspirant.entity";
 import { Vote } from "./votes/vote.entity";
 import { VotingWindow } from "./votes/voting-window.entity";
@@ -172,7 +167,6 @@ function resolveRedisUrl(): string | undefined {
       entities: [
         User,
         Ward,
-        Voter,
         Aspirant,
         Vote,
         VotingWindow,
@@ -209,13 +203,9 @@ function resolveRedisUrl(): string | undefined {
     UsersModule,
     WardsModule,
     AspirantWardMeetingsModule,
-    VoterRollModule,
     AspirantsModule,
     VotesModule,
     AdminModule,
-    ExtractionModule,
-    VerificationModule,
-    PdfUploadModule,
     ForumModule,
     GeographyModule,
     AspirantChatModule,

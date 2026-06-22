@@ -1,7 +1,6 @@
 import { Column, Entity, OneToMany } from "typeorm";
 import { BaseEntity } from "../common/base.entity";
 import { User } from "../users/user.entity";
-import { Voter } from "../voter-roll/voter.entity";
 import { Aspirant } from "../aspirants/aspirant.entity";
 import { Vote } from "../votes/vote.entity";
 
@@ -33,9 +32,6 @@ export class Ward extends BaseEntity {
 
   @OneToMany(() => User, (user) => user.ward)
   users?: User[];
-
-  @OneToMany(() => Voter, (voter) => voter.ward)
-  voters?: Voter[];
 
   @OneToMany(() => Aspirant, (aspirant) => aspirant.ward)
   aspirants?: Aspirant[];

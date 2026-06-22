@@ -226,25 +226,6 @@ export class AdminController {
     );
   }
 
-  @Get("voter-counts")
-  @ApiOperation({
-    summary: "Get voter counts for all wards or specific ward numbers",
-  })
-  @ApiQuery({
-    name: "wardNumbers",
-    required: false,
-    type: "string",
-    description: "Comma-separated ward numbers e.g. W-94,W-95",
-  })
-  @ApiResponse({
-    status: 200,
-    description: "Voter counts returned successfully",
-  })
-  @ApiResponse({ status: 401, description: "Unauthorized" })
-  getVoterCounts(@Query("wardNumbers") wardNumbers?: string) {
-    return this.adminService.getVoterCounts(wardNumbers);
-  }
-
   @Get("meetings/:id")
   @ApiOperation({ summary: "Get a specific meeting by ID" })
   @ApiParam({ name: "id", type: "number", description: "Meeting ID" })
