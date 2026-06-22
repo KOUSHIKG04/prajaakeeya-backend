@@ -18,7 +18,6 @@ import {
 } from "@nestjs/swagger";
 import { AuthService } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
-import { VerifyOtpDto } from "./dto/verify-otp.dto";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
 
@@ -40,15 +39,6 @@ export class AuthController {
   @ApiResponse({ status: 404, description: "Admin not found" })
   adminLogin(@Body() dto: LoginDto) {
     return this.authService.adminLogin(dto);
-  }
-
-  @Post("admin/verify-otp")
-  @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Verify OTP and get JWT token for admin" })
-  @ApiResponse({ status: 201, description: "OTP verified, JWT token returned" })
-  @ApiResponse({ status: 401, description: "Invalid OTP" })
-  adminVerifyOtp(@Body() dto: VerifyOtpDto) {
-    return this.authService.adminVerifyOtp(dto);
   }
 
   // POST /auth/admin/seed removed — admin creation must not be exposed over an

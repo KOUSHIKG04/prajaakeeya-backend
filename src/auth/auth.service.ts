@@ -17,10 +17,8 @@ import { ElectionsService } from "../elections/elections.service";
 import { ParliamentaryService } from "../geography/parliamentary.service";
 import { AssemblyService } from "../geography/assembly.service";
 import { GramaPanchayatService } from "../grama-panchayat/grama-panchayat.service";
-import { SESService } from "../common/services/ses.service";
 import { S3Service } from "../common/services/s3.service";
 import { LoginDto } from "./dto/login.dto";
-import { VerifyOtpDto } from "./dto/verify-otp.dto";
 import { Otp } from "./otp.entity";
 import { User } from "../users/user.entity";
 import axios from "axios";
@@ -36,7 +34,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
     private readonly wardsService: WardsService,
     private readonly aspirantsService: AspirantsService,
     private readonly votesService: VotesService,
-    private readonly sesService: SESService,
     private readonly s3Service: S3Service,
     private readonly electionsService: ElectionsService,
     private readonly parliamentaryService: ParliamentaryService,
@@ -288,54 +285,6 @@ export class AuthService implements OnModuleInit, OnModuleDestroy {
 
     const payload = this.buildJwtPayload(existing);
     return { token: await this.jwtService.signAsync(payload), user: existing };
-  }
-
-  async adminVerifyOtp(verifyOtpDto: VerifyOtpDto) {
-    // Get the latest login OTP record for this email
-    const otpRecord = await this.otpRepo.findOne({
-      where: { email: verifyOtpDto.email, purpose: "admin_login" },
-      order: { createdAt: "DESC" },
-    });
-
-    if (
-      !otpRecord ||
-      !otpRecord.verificationId ||
-      otpRecord.expiresAt < new Date()
-    ) {
-      throw new UnauthorizedException("Invalid or expired OTP");
-    }
-
-    // Validate verificationId if provided in request
-    if (
-      verifyOtpDto.verificationId &&
-      verifyOtpDto.verificationId !== otpRecord.verificationId
-    ) {
-      throw new UnauthorizedException("Invalid verification session");
-    }
-
-    // Verify OTP with SES
-    const { verified } = await this.sesService.verifyOtp(
-      verifyOtpDto.email,
-      otpRecord.verificationId,
-      verifyOtpDto.otp,
-    );
-
-    if (!verified) {
-      throw new UnauthorizedException("Invalid OTP");
-    }
-
-    // Mark OTP as verified and used
-    otpRecord.verifiedAt = new Date();
-    otpRecord.usedAt = new Date();
-    await this.otpRepo.save(otpRecord);
-
-    // Get user and verify admin role
-    const user = await this.usersService.findByEmail(verifyOtpDto.email);
-    if (!user || user.role !== "admin") {
-      throw new UnauthorizedException("Invalid admin credentials");
-    }
-    const payload = this.buildJwtPayload(user);
-    return { token: await this.jwtService.signAsync(payload), user };
   }
 
   /**

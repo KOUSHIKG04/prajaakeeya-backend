@@ -14,7 +14,6 @@ import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { Otp } from "./otp.entity";
-import { SESService } from "../common/services/ses.service";
 import { S3Service } from "../common/services/s3.service";
 import { MessageCentralService } from "../common/services/message-central.service";
 
@@ -46,7 +45,6 @@ import { MessageCentralService } from "../common/services/message-central.servic
   providers: [
     AuthService,
     JwtStrategy,
-    SESService,
     S3Service,
     MessageCentralService,
   ],
