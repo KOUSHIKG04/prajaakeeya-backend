@@ -8,6 +8,7 @@ import {
 import { Upload } from "@aws-sdk/lib-storage";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { ConfigService } from "@nestjs/config";
+import { basename, extname } from "path";
 
 // Filenames are timestamp-prefixed so the same key never changes content —
 // safe for a one-year immutable browser/CDN cache.
@@ -49,7 +50,13 @@ export class S3Service {
     folder?: string,
   ): Promise<string> {
     const timestamp = Date.now();
-    const fileName = `${timestamp}-${file.originalname.replace(/\s+/g, "-")}`;
+    // Sanitize the client-supplied name: strip any path components and reduce
+    // to a safe charset so the key can't contain "..", control chars, RTL
+    // overrides or null bytes, and stays parseable by deleteFile().
+    const safeBase = basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const ext = extname(safeBase).slice(0, 10);
+    const stem = safeBase.slice(0, safeBase.length - ext.length).slice(0, 80) || "file";
+    const fileName = `${timestamp}-${stem}${ext}`;
     const key = folder ? `${folder}/${fileName}` : fileName;
 
     const upload = new Upload({
