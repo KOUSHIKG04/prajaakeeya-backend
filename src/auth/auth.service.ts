@@ -392,7 +392,6 @@ export class AuthService {
     // Never serialize credential material to the client.
     delete result.passwordHash;
     delete result.passwordSalt;
-    delete result.lastOtp;
 
     if (ward) {
       result.wardNumber = ward.number;

@@ -137,25 +137,6 @@ export class UsersService {
     });
   }
 
-  async upsertOtp(phone: string, otp: string) {
-    const user = await this.repo.findOne({ where: { phone } });
-    if (!user) {
-      throw new NotFoundException("User not registered");
-    }
-    user.lastOtp = otp;
-    await this.repo.save(user);
-  }
-
-  async validateOtp(phone: string, otp: string) {
-    const user = await this.repo.findOne({ where: { phone } });
-    if (!user || user.lastOtp !== otp) {
-      return null;
-    }
-    user.lastOtp = null;
-    await this.repo.save(user);
-    return user;
-  }
-
   async registerVoterFromRoll(payload: {
     phone: string;
     name: string;
@@ -503,7 +484,6 @@ export class UsersService {
     // (this method backs GET /users/me and the admin user-detail view).
     delete (user as any).passwordHash;
     delete (user as any).passwordSalt;
-    delete (user as any).lastOtp;
 
     return user;
   }
@@ -980,7 +960,6 @@ export class UsersService {
       user.name = "Deleted User";
       user.phone = undefined;
       user.profilePicture = undefined;
-      user.lastOtp = null;
       await this.repo.save(user);
 
       // Clear phone in aspirant table too

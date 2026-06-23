@@ -564,11 +564,17 @@ export class AspirantsService {
   async listBookingsForAspirant(
     aspirantId: number,
     user: { id?: number; role?: string },
+    page?: number,
+    limit?: number,
   ) {
     await this.assertOwnsAspirant(aspirantId, user);
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.min(100, Math.max(1, Number(limit) || 100));
     const bookings = await this.bookingRepo.find({
       where: { aspirantId },
       order: { createdAt: "DESC" },
+      skip: (p - 1) * l,
+      take: l,
     });
     if (!bookings.length) return [];
 
@@ -622,10 +628,18 @@ export class AspirantsService {
     return saved;
   }
 
-  async listVisitsForAspirant(aspirantId: number) {
+  async listVisitsForAspirant(
+    aspirantId: number,
+    page?: number,
+    limit?: number,
+  ) {
+    const p = Math.max(1, Number(page) || 1);
+    const l = Math.min(100, Math.max(1, Number(limit) || 100));
     const visits = await this.visitRepo.find({
       where: { aspirantId },
       order: { startTime: "DESC" },
+      skip: (p - 1) * l,
+      take: l,
     });
     const counts = await this.getVisitResponseCounts(visits.map((v) => v.id));
     return visits.map((v) => ({
@@ -730,7 +744,6 @@ export class AspirantsService {
       .createQueryBuilder("aspirant")
       .leftJoinAndSelect("aspirant.ward", "ward")
       .leftJoinAndSelect("aspirant.user", "user")
-      .leftJoinAndSelect("aspirant.meetings", "meetings")
       .where("ward.number = :wardNumber", { wardNumber })
       .andWhere("aspirant.isActive = :isActive", { isActive: true })
       .orderBy("aspirant.createdAt", "DESC")
@@ -739,6 +752,23 @@ export class AspirantsService {
     if (!aspirants.length) return [];
 
     const ids = aspirants.map((a) => a.id);
+
+    // Load meetings separately (instead of a leftJoinAndSelect that multiplies
+    // aspirant rows by their meetings) and group them in JS, mirroring the
+    // allVisits pattern below.
+    const meetings = await this.meetingRepo.find({
+      where: { aspirantId: In(ids) },
+    });
+    const meetingsByAspirant = new Map<number, AspirantMeeting[]>();
+    for (const m of meetings) {
+      (
+        meetingsByAspirant.get(m.aspirantId) ??
+        meetingsByAspirant.set(m.aspirantId, []).get(m.aspirantId)!
+      ).push(m);
+    }
+    for (const a of aspirants) {
+      (a as any).meetings = meetingsByAspirant.get(a.id) ?? [];
+    }
     const meetingIds = aspirants.flatMap(
       (a) => (a.meetings ?? []).map((m: any) => m.id),
     );
@@ -826,7 +856,6 @@ export class AspirantsService {
       .createQueryBuilder("aspirant")
       .leftJoinAndSelect("aspirant.ward", "ward")
       .leftJoinAndSelect("aspirant.user", "user")
-      .leftJoinAndSelect("aspirant.meetings", "meetings")
       .where("aspirant.electionId = :electionId", { electionId })
       .andWhere("aspirant.constituencyId = :constituencyId", { constituencyId })
       .andWhere("aspirant.isActive = :isActive", { isActive: true })
@@ -839,6 +868,23 @@ export class AspirantsService {
       return [this.getDemoAspirant(electionId, constituencyId)];
 
     const ids = aspirants.map((a) => a.id);
+
+    // Load meetings separately (instead of a leftJoinAndSelect that multiplies
+    // aspirant rows by their meetings) and group them in JS, mirroring the
+    // allVisits pattern below.
+    const meetings = await this.meetingRepo.find({
+      where: { aspirantId: In(ids) },
+    });
+    const meetingsByAspirant = new Map<number, AspirantMeeting[]>();
+    for (const m of meetings) {
+      (
+        meetingsByAspirant.get(m.aspirantId) ??
+        meetingsByAspirant.set(m.aspirantId, []).get(m.aspirantId)!
+      ).push(m);
+    }
+    for (const a of aspirants) {
+      (a as any).meetings = meetingsByAspirant.get(a.id) ?? [];
+    }
     const meetingIds = aspirants.flatMap(
       (a) => (a.meetings ?? []).map((m: any) => m.id),
     );
