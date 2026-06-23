@@ -238,6 +238,13 @@ export class UsersService {
     return this.repo.save(user);
   }
 
+  /** Total registered citizens — voters + aspirants (admins excluded). */
+  async countRegistered(): Promise<number> {
+    return this.repo.count({
+      where: [{ role: "voter" as any }, { role: "aspirant" as any }],
+    });
+  }
+
   async findAllVoters(page: number, limit: number, search?: string) {
     const qb = this.repo
       .createQueryBuilder("user")
@@ -706,23 +713,21 @@ export class UsersService {
     if (!user) throw new NotFoundException("User not found");
     if (!aspirant) throw new NotFoundException("Aspirant not found");
 
-    // SELECT-then-INSERT/UPDATE keeps behavior identical to the original
-    // four track* methods and doesn't depend on a DB unique constraint.
-    const existing = await this.userAspirantInteractionRepo.findOne({
-      where: { userId, aspirantId },
-    });
-    if (existing) {
-      (existing as any)[flagCol] = true;
-      if (type === "phoneCall") (existing as any).phoneCallAt = at ?? new Date();
-      await this.userAspirantInteractionRepo.save(existing);
-    } else {
-      await this.userAspirantInteractionRepo.save({
+    // Atomic upsert — INSERT ... ON CONFLICT (userId, aspirantId) DO UPDATE.
+    // The previous SELECT-then-INSERT raced under concurrent requests for the
+    // same (userId, aspirantId) and violated the unique constraint, throwing
+    // "duplicate key value violates unique constraint". ON CONFLICT only
+    // updates the columns provided here, so the other interaction flags on an
+    // existing row are preserved.
+    await this.userAspirantInteractionRepo.upsert(
+      {
         userId,
         aspirantId,
         [flagCol]: true,
         ...(type === "phoneCall" ? { phoneCallAt: at ?? new Date() } : {}),
-      } as any);
-    }
+      } as any,
+      { conflictPaths: ["userId", "aspirantId"] },
+    );
 
     const uniqueAspirants = await this.userAspirantInteractionRepo
       .createQueryBuilder("interaction")

@@ -13,6 +13,17 @@ import { StatsService } from "./stats.service";
 export class StatsController {
   constructor(private readonly statsService: StatsService) {}
 
+  @Get("citizens")
+  @Public()
+  @ApiOperation({
+    summary:
+      "Public — total number of registered citizens (voters + aspirants)",
+  })
+  @ApiResponse({ status: 200, description: "Citizen count returned" })
+  countCitizens() {
+    return this.statsService.countCitizens();
+  }
+
   @Get("constituency")
   @Public()
   @ApiOperation({
