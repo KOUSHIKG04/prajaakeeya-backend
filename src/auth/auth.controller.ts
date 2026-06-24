@@ -2,12 +2,16 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
   Post,
   Query,
+  Req,
   Res,
+  UnauthorizedException,
   UseGuards,
 } from "@nestjs/common";
-import type { Response } from "express";
+import { randomBytes } from "crypto";
+import type { Request, Response } from "express";
 import { Throttle } from "@nestjs/throttler";
 import {
   ApiTags,
@@ -16,10 +20,22 @@ import {
   ApiBearerAuth,
   ApiQuery,
 } from "@nestjs/swagger";
-import { AuthService } from "./auth.service";
+import { AuthService, SessionResult } from "./auth.service";
 import { LoginDto } from "./dto/login.dto";
+import { GoogleExchangeDto } from "./dto/google-exchange.dto";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
-import { CurrentUser } from "../common/decorators/current-user.decorator";
+import {
+  CurrentUser,
+  AuthUser,
+} from "../common/decorators/current-user.decorator";
+import {
+  setSessionCookie,
+  setRefreshCookie,
+  clearSessionCookie,
+  clearRefreshCookie,
+  readCookie,
+  REFRESH_COOKIE_NAME,
+} from "./session-cookie";
 
 // Tighter limits for auth endpoints to prevent brute-force / SMS-burn attacks.
 const STRICT_AUTH_THROTTLE = { default: { ttl: 60_000, limit: 5 } };
@@ -29,16 +45,32 @@ const STRICT_AUTH_THROTTLE = { default: { ttl: 60_000, limit: 5 } };
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  /**
+   * Write both auth cookies from a freshly issued session: the short-lived
+   * access token (path `/`) and the rotating refresh token (path-scoped to
+   * `/auth/refresh`). Bearer/native clients also get the access token in the
+   * JSON body.
+   */
+  private setSession(res: Response, session: SessionResult): void {
+    setSessionCookie(res, session.accessToken);
+    setRefreshCookie(res, session.refreshToken, session.refreshExpiresAt);
+  }
+
   @Post("admin/login")
   @Throttle(STRICT_AUTH_THROTTLE)
-  @ApiOperation({ summary: "Admin login with password (returns JWT)" })
+  @ApiOperation({ summary: "Admin login with password (sets session cookies)" })
   @ApiResponse({
     status: 201,
-    description: "Login successful, JWT returned",
+    description: "Login successful — session cookies set, access token in body",
   })
   @ApiResponse({ status: 404, description: "Admin not found" })
-  adminLogin(@Body() dto: LoginDto) {
-    return this.authService.adminLogin(dto);
+  async adminLogin(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const session = await this.authService.adminLogin(dto);
+    this.setSession(res, session);
+    return { token: session.accessToken, user: session.user };
   }
 
   // POST /auth/admin/seed removed — admin creation must not be exposed over an
@@ -50,11 +82,20 @@ export class AuthController {
     description:
       "Redirects the browser to Google's consent screen. After consent, Google redirects back to /auth/google/callback.",
   })
+  @ApiQuery({ name: "state", required: false })
   @ApiResponse({ status: 302, description: "Redirect to Google OAuth" })
-  googleOAuthRedirect(@Res() res: Response) {
-    // Mint a stateless, HMAC-signed CSRF state and round-trip it via Google.
-    // The callback verifies the signature + freshness — no cookie required.
-    const state = this.authService.issueOAuthState();
+  googleOAuthRedirect(
+    @Query("state") clientState: string | undefined,
+    @Res() res: Response,
+  ) {
+    // Embed the frontend's CSRF state inside an HMAC-signed, fresh-stamped
+    // wrapper and round-trip it via Google. The callback verifies the
+    // signature + freshness and echoes the client state back, which the
+    // frontend compares against the value it stashed (double-submit CSRF).
+    // Fall back to a server-minted nonce if the client omits one.
+    const state = this.authService.issueOAuthState(
+      clientState || randomBytes(16).toString("hex"),
+    );
     const url = this.authService.getGoogleAuthUrl(state);
     return res.redirect(url);
   }
@@ -63,9 +104,12 @@ export class AuthController {
   @ApiOperation({
     summary: "Google OAuth 2.0 callback",
     description:
-      "Google redirects here with an authorization code. Backend exchanges it for tokens, fetches the profile, creates/finds the user, issues a JWT, and redirects to the frontend app with the token.",
+      "Google redirects here with an authorization code. Backend exchanges it for tokens, fetches the profile, creates/finds the user, and redirects to the frontend with a single-use code (never a JWT).",
   })
-  @ApiResponse({ status: 302, description: "Redirect to frontend with token" })
+  @ApiResponse({
+    status: 302,
+    description: "Redirect to frontend with one-time code",
+  })
   async googleOAuthCallback(
     @Query("code") code: string,
     @Query("state") state: string | undefined,
@@ -75,11 +119,77 @@ export class AuthController {
     if (error) {
       return res.status(400).send(`Google OAuth error: ${error}`);
     }
-    if (!state || !this.authService.verifyOAuthState(state)) {
+    const clientState = state ? this.authService.verifyOAuthState(state) : null;
+    if (!clientState) {
       return res.status(400).send("Invalid OAuth state — possible CSRF");
     }
-    const { redirectUrl } = await this.authService.handleGoogleCallback(code);
+    const { token, errorRedirectUrl } =
+      await this.authService.handleGoogleCallback(code);
+    if (errorRedirectUrl) {
+      return res.redirect(errorRedirectUrl);
+    }
+    // Hand the frontend a single-use code (not a JWT) so no token ever appears
+    // in the URL / history / referrer / logs. The frontend redeems it via
+    // POST /auth/google/exchange, which sets the session + refresh cookies.
+    const oneTimeCode = await this.authService.createOneTimeCode(
+      token,
+      clientState,
+    );
+    const frontendRedirect = this.authService.getFrontendRedirectUri();
+    const sep = frontendRedirect.includes("?") ? "&" : "?";
+    const redirectUrl = `${frontendRedirect}${sep}code=${encodeURIComponent(
+      oneTimeCode,
+    )}&state=${encodeURIComponent(clientState)}`;
     return res.redirect(redirectUrl);
+  }
+
+  @Post("google/exchange")
+  @Throttle(STRICT_AUTH_THROTTLE)
+  @ApiOperation({
+    summary: "Exchange a one-time OAuth code for a cookie session",
+    description:
+      "Validates the OAuth state, consumes the single-use code, sets the session + refresh cookies, and returns the authenticated user.",
+  })
+  @ApiResponse({ status: 201, description: "Session established" })
+  @ApiResponse({ status: 401, description: "Invalid or expired code/state" })
+  async googleExchange(
+    @Body() dto: GoogleExchangeDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { profile, ...session } = await this.authService.exchangeOneTimeCode(
+      dto.code,
+      dto.state,
+    );
+    this.setSession(res, session);
+    return { token: session.accessToken, user: profile };
+  }
+
+  @Post("refresh")
+  @Throttle(STRICT_AUTH_THROTTLE)
+  @ApiOperation({
+    summary: "Refresh the session using the refresh-token cookie",
+    description:
+      "Reads the rotating refresh-token cookie, issues a new access token + rotated refresh token (resetting both cookies). Call this on a 401, then retry the original request.",
+  })
+  @ApiResponse({ status: 201, description: "Session refreshed" })
+  @ApiResponse({
+    status: 401,
+    description: "Missing / invalid / revoked refresh token",
+  })
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = readCookie(req, REFRESH_COOKIE_NAME);
+    if (!refreshToken) {
+      throw new UnauthorizedException("No refresh token");
+    }
+    const session = await this.authService.rotateRefresh(refreshToken);
+    this.setSession(res, session);
+    return {
+      token: session.accessToken,
+      user: { id: session.user.id, role: session.user.role },
+    };
   }
 
   @Get("me")
@@ -88,7 +198,29 @@ export class AuthController {
   @ApiOperation({ summary: "Get current user profile" })
   @ApiResponse({ status: 200, description: "User profile returned" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  me(@CurrentUser() user: any) {
+  me(@CurrentUser() user: AuthUser) {
     return this.authService.profile(user.id);
+  }
+
+  @Post("logout")
+  @HttpCode(200)
+  @ApiOperation({
+    summary: "Log out — revoke the refresh session and clear cookies",
+  })
+  @ApiResponse({ status: 200, description: "Logged out" })
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    // Best-effort server-side revocation: clear the stored refresh hash so the
+    // refresh token dies immediately, then clear both cookies. Succeeds even
+    // when no session was present.
+    const refreshToken = readCookie(req, REFRESH_COOKIE_NAME);
+    const userId = refreshToken
+      ? this.authService.decodeRefreshSub(refreshToken)
+      : null;
+    if (userId) {
+      await this.authService.revokeSession(userId);
+    }
+    clearSessionCookie(res);
+    clearRefreshCookie(res);
+    return { success: true };
   }
 }

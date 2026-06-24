@@ -3,7 +3,6 @@ import {
   Get,
   Post,
   Patch,
-  Delete,
   Param,
   Body,
   Query,
@@ -34,6 +33,7 @@ import { CreateAssemblyDto } from "../geography/dto/create-assembly.dto";
 import { CreateMunicipalityDto } from "../geography/dto/create-municipality.dto";
 import { CreateWardDto } from "../wards/dto/create-ward.dto";
 import { CreateGramaPanchayatDto } from "../grama-panchayat/dto/create-grama-panchayat.dto";
+import { AuthUser } from "../common/decorators/current-user.decorator";
 
 @ApiTags("Admin")
 @Controller("admin")
@@ -100,7 +100,7 @@ export class AdminController {
   updateReportStatus(
     @Param("id") id: string,
     @Body() updateReportStatusDto: UpdateReportStatusDto,
-    @Req() req: any,
+    @Req() req: { user?: AuthUser },
   ) {
     const adminId = req.user?.id;
     return this.adminService.updateReportStatus(
@@ -195,7 +195,10 @@ export class AdminController {
   @ApiResponse({ status: 201, description: "Meeting created successfully" })
   @ApiResponse({ status: 404, description: "Ward not found" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  createMeeting(@Body() dto: CreateWardMeetingDto, @Req() req: any) {
+  createMeeting(
+    @Body() dto: CreateWardMeetingDto,
+    @Req() req: { user: AuthUser },
+  ) {
     const adminId = req.user?.id;
     return this.adminService.createMeeting(dto, adminId);
   }

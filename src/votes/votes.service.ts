@@ -77,7 +77,10 @@ export class VotesService {
       // closes the check-then-insert race where two concurrent requests both
       // pass the "already voted" check above and try to insert. Surface it as a
       // clean 409 instead of a 500.
-      if (e instanceof QueryFailedError && (e as any).code === "23505") {
+      if (
+        e instanceof QueryFailedError &&
+        (e as { code?: string }).code === "23505"
+      ) {
         throw new ConflictException(
           "You have already voted in this voting window",
         );

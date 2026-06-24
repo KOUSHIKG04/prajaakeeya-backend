@@ -11,7 +11,8 @@ import { Repository } from "typeorm";
 import { S3Service } from "./s3.service";
 import { User } from "../../users/user.entity";
 import { Aspirant } from "../../aspirants/aspirant.entity";
-import { AdminDocument } from "../../admin/admin-document.entity";
+import { AdminDocument, DocumentType } from "../../admin/admin-document.entity";
+import { AuthUser } from "../decorators/current-user.decorator";
 import { UserSignedDocument } from "../../users/user-signed-document.entity";
 import { VerifyDocumentDto } from "../dto/media-upload.dto";
 import { AspirantsService } from "../../aspirants/aspirants.service";
@@ -58,6 +59,9 @@ export class MediaService {
       throw new BadRequestException("No profile picture to delete");
 
     await this.s3Service.deleteFile(user.profilePicture);
+    // profilePicture is typed `string | undefined` on the entity but we must
+    // persist a SQL NULL (not leave it unchanged) — keep the explicit null.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     user.profilePicture = null as any;
     await this.userRepo.save(user);
     return { message: "Profile picture deleted successfully" };
@@ -67,7 +71,7 @@ export class MediaService {
     aspirantId: number,
     documentType: string,
     file: Express.Multer.File,
-    user: { id?: number; role?: string } = {},
+    user: Partial<AuthUser> = {},
   ): Promise<Aspirant> {
     const aspirant = await this.aspirantRepo.findOne({
       where: { id: aspirantId },
@@ -264,10 +268,14 @@ export class MediaService {
           const keys = Object.keys(reasons || {});
           aspirant.rejectionReasons = keys.length
             ? JSON.stringify(reasons)
-            : (null as any);
+            : // persist SQL NULL to clear the field; entity types it as
+              // `string | undefined` so null requires the cast.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              (null as any);
         }
-      } catch (e) {
-        // If parsing fails, clear the field to avoid stale data
+      } catch {
+        // If parsing fails, clear the field to avoid stale data (SQL NULL).
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         aspirant.rejectionReasons = null as any;
       }
     }
@@ -289,12 +297,12 @@ export class MediaService {
 
     // Deactivate previous versions
     await this.adminDocRepo.update(
-      { documentType: documentType as any, isActive: true },
+      { documentType: documentType as DocumentType, isActive: true },
       { isActive: false },
     );
 
     const adminDoc = this.adminDocRepo.create({
-      documentType: documentType as any,
+      documentType: documentType as DocumentType,
       documentUrl: url,
       version,
       description,

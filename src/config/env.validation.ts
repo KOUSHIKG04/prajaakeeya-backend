@@ -26,6 +26,20 @@ class EnvironmentVariables {
   @IsNotEmpty()
   JWT_SECRET!: string;
 
+  // Optional. If unset, a distinct refresh-signing key is derived from
+  // JWT_SECRET. Access token defaults to 15m, refresh to 7d.
+  @IsString()
+  @IsOptional()
+  JWT_REFRESH_SECRET?: string;
+
+  @IsString()
+  @IsOptional()
+  JWT_ACCESS_EXPIRES_IN?: string;
+
+  @IsString()
+  @IsOptional()
+  JWT_REFRESH_EXPIRES_IN?: string;
+
   @IsString()
   @IsNotEmpty()
   AWS_ACCESS_KEY_ID!: string;
@@ -57,6 +71,11 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   GOOGLE_FRONTEND_REDIRECT_URI?: string;
+
+  // Session cookie SameSite policy: "lax" (default) or "none" (cross-site FE).
+  @IsString()
+  @IsOptional()
+  COOKIE_SAMESITE?: string;
 
   @IsString()
   @IsOptional()
