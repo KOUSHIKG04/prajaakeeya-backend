@@ -145,4 +145,15 @@ export class User extends BaseEntity {
   // Bumped on logout/block/password-change to invalidate outstanding JWTs.
   @Column({ name: "token_version", type: "int", default: 0 })
   tokenVersion!: number;
+
+  // SHA-256 hash of the user's CURRENT refresh token (single active session).
+  // Rotated on every refresh; cleared on logout/revoke. `select: false` so it
+  // is never loaded or serialized unless a query explicitly asks for it.
+  @Column({
+    name: "refresh_token_hash",
+    type: "text",
+    nullable: true,
+    select: false,
+  })
+  refreshTokenHash?: string | null;
 }

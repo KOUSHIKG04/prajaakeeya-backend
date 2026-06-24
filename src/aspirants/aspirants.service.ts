@@ -7,7 +7,13 @@ import {
   forwardRef,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, In, DataSource, EntityManager } from "typeorm";
+import {
+  Repository,
+  In,
+  DataSource,
+  EntityManager,
+  DeepPartial,
+} from "typeorm";
 import { Aspirant } from "./aspirant.entity";
 import { CreateAspirantDto } from "./dto/create-aspirant.dto";
 import { UsersService } from "../users/users.service";
@@ -24,11 +30,53 @@ import { UserAspirantInteraction } from "../users/user-aspirant-interaction.enti
 import { UpdateAspirantDto } from "./dto/update-aspirant.dto";
 import { User } from "../users/user.entity";
 import { NotificationsService } from "../notifications/notifications.service";
-import { ElectionType } from "../elections/election.entity";
+import { Election, ElectionType } from "../elections/election.entity";
+import { AuthUser } from "../common/decorators/current-user.decorator";
 
 interface ResponseCounts {
   attending: number;
   notAttending: number;
+}
+
+export interface Rating {
+  averageRating: number;
+  totalRatings: number;
+  distribution?: Record<number, number>;
+}
+
+export interface VisitDto {
+  id: number;
+  createdAt: number | Date;
+  updatedAt: number | Date;
+  aspirantId: number;
+  startTime?: number;
+  endTime?: number;
+  title?: string;
+  description?: string;
+  location?: string;
+  googleMapsLink?: string;
+  attendingCount: number;
+  rating: Rating;
+  isRated?: boolean;
+}
+
+export interface MeetingDto {
+  id: number;
+  createdAt: number | Date;
+  updatedAt: number | Date;
+  aspirantId: number;
+  meetingLink: string;
+  platform: AspirantMeeting["platform"];
+  title?: string;
+  description?: string;
+  startTime?: number;
+  endTime?: number;
+  completed: boolean;
+  notes?: string;
+  attendingCount: number;
+  notAttendingCount: number;
+  rating: Rating;
+  isRated?: boolean;
 }
 
 @Injectable()
@@ -63,16 +111,25 @@ export class AspirantsService {
    * aspirant so notifications can be addressed in the right "namespace".
    * Returns null when the aspirant has no election/constituency configured.
    */
-  private async resolveConstituencyContext(
-    aspirant: Aspirant,
-  ): Promise<{ electionType: ElectionType; constituencyName: string | null } | null> {
+  private async resolveConstituencyContext(aspirant: Aspirant): Promise<{
+    electionType: ElectionType;
+    constituencyName: string | null;
+  } | null> {
     if (!aspirant.electionId || !aspirant.constituencyId) return null;
     const election = await this.electionsService.findById(aspirant.electionId);
     const electionMap = new Map([
-      [election.id, { id: election.id, name: election.name, type: election.type }],
+      [
+        election.id,
+        { id: election.id, name: election.name, type: election.type },
+      ],
     ]);
     const lookup = await this.resolveConstituencyNames(
-      [{ electionId: aspirant.electionId, constituencyId: aspirant.constituencyId }],
+      [
+        {
+          electionId: aspirant.electionId,
+          constituencyId: aspirant.constituencyId,
+        },
+      ],
       electionMap,
     );
     return {
@@ -166,6 +223,12 @@ export class AspirantsService {
 
     const dedupe = (arr: number[]) => Array.from(new Set(arr));
 
+    type ConstituencyRow = {
+      id: number;
+      name?: string;
+      villageName?: string;
+    };
+
     const [parls, asms, wards, gps] = await Promise.all([
       buckets.lok_sabha.length
         ? this.repo.manager
@@ -173,16 +236,18 @@ export class AspirantsService {
             .select(["pc.id AS id", "pc.name AS name"])
             .from("parliamentary_constituencies", "pc")
             .where("pc.id IN (:...ids)", { ids: dedupe(buckets.lok_sabha) })
-            .getRawMany()
-        : Promise.resolve([] as any[]),
+            .getRawMany<ConstituencyRow>()
+        : Promise.resolve([] as ConstituencyRow[]),
       buckets.state_assembly.length
         ? this.repo.manager
             .createQueryBuilder()
             .select(["ac.id AS id", "ac.name AS name"])
             .from("assembly_constituencies", "ac")
-            .where("ac.id IN (:...ids)", { ids: dedupe(buckets.state_assembly) })
-            .getRawMany()
-        : Promise.resolve([] as any[]),
+            .where("ac.id IN (:...ids)", {
+              ids: dedupe(buckets.state_assembly),
+            })
+            .getRawMany<ConstituencyRow>()
+        : Promise.resolve([] as ConstituencyRow[]),
       buckets.municipal_corporation.length
         ? this.repo.manager
             .createQueryBuilder()
@@ -191,21 +256,18 @@ export class AspirantsService {
             .where("w.id IN (:...ids)", {
               ids: dedupe(buckets.municipal_corporation),
             })
-            .getRawMany()
-        : Promise.resolve([] as any[]),
+            .getRawMany<ConstituencyRow>()
+        : Promise.resolve([] as ConstituencyRow[]),
       buckets.gram_panchayat.length
         ? this.repo.manager
             .createQueryBuilder()
-            .select([
-              'gp."Sr.No" AS id',
-              'gp."Village Name" AS "villageName"',
-            ])
+            .select(['gp."Sr.No" AS id', 'gp."Village Name" AS "villageName"'])
             .from("grama_panchayat", "gp")
             .where('gp."Sr.No" IN (:...ids)', {
               ids: dedupe(buckets.gram_panchayat),
             })
-            .getRawMany()
-        : Promise.resolve([] as any[]),
+            .getRawMany<ConstituencyRow>()
+        : Promise.resolve([] as ConstituencyRow[]),
     ]);
 
     const lookup = new Map<string, string>();
@@ -216,11 +278,15 @@ export class AspirantsService {
         (electionsByType.get(e.type) ?? []).concat(eid),
       );
 
-    const fillForType = (type: string, rows: any[], nameKey = "name") => {
+    const fillForType = (
+      type: string,
+      rows: ConstituencyRow[],
+      nameKey: "name" | "villageName" = "name",
+    ) => {
       const electionIds = electionsByType.get(type) ?? [];
       for (const r of rows) {
         for (const eid of electionIds) {
-          lookup.set(`${eid}:${r.id}`, r[nameKey]);
+          lookup.set(`${eid}:${r.id}`, r[nameKey] as string);
         }
       }
     };
@@ -233,7 +299,7 @@ export class AspirantsService {
     return lookup;
   }
 
-  async register(dto: CreateAspirantDto, user?: any) {
+  async register(dto: CreateAspirantDto, user?: AuthUser) {
     if (!user?.id) throw new BadRequestException("Authentication required");
 
     // Validate phone uniqueness
@@ -265,7 +331,7 @@ export class AspirantsService {
     return this.create(dto, user);
   }
 
-  private async create(dto: CreateAspirantDto, user?: any) {
+  private async create(dto: CreateAspirantDto, user?: AuthUser) {
     // Resolve election and set wardId for municipal_corporation
     const election = await this.electionsService.findById(dto.electionId);
     let wardId: number | null = null;
@@ -465,7 +531,9 @@ export class AspirantsService {
       return;
     }
     try {
-      const election = await this.electionsService.findById(aspirant.electionId);
+      const election = await this.electionsService.findById(
+        aspirant.electionId,
+      );
       const patch: Record<string, number> = {};
       switch (election.type) {
         case "lok_sabha":
@@ -582,7 +650,7 @@ export class AspirantsService {
     const voters = await this.usersService.findManyByIds(voterIds);
     const voterMap = new Map<number, User>(voters.map((v) => [v.id, v]));
 
-    return bookings.map((b: any) => ({
+    return bookings.map((b) => ({
       id: b.id,
       createdAt: b.createdAt,
       updatedAt: b.updatedAt,
@@ -620,7 +688,11 @@ export class AspirantsService {
     try {
       const ctx = await this.resolveConstituencyContext(aspirant);
       if (ctx) {
-        await this.notificationsService.notifyAspirantVisit(aspirant, saved, ctx);
+        await this.notificationsService.notifyAspirantVisit(
+          aspirant,
+          saved,
+          ctx,
+        );
       }
     } catch {
       /* best-effort */
@@ -767,10 +839,10 @@ export class AspirantsService {
       ).push(m);
     }
     for (const a of aspirants) {
-      (a as any).meetings = meetingsByAspirant.get(a.id) ?? [];
+      a.meetings = meetingsByAspirant.get(a.id) ?? [];
     }
-    const meetingIds = aspirants.flatMap(
-      (a) => (a.meetings ?? []).map((m: any) => m.id),
+    const meetingIds = aspirants.flatMap((a) =>
+      (a.meetings ?? []).map((m) => m.id),
     );
 
     const [
@@ -791,7 +863,7 @@ export class AspirantsService {
       allVisits.map((v) => v.id),
     );
 
-    const visitsByAspirant: Record<number, any[]> = {};
+    const visitsByAspirant: Record<number, VisitDto[]> = {};
     for (const v of allVisits) {
       if (!visitsByAspirant[v.aspirantId]) visitsByAspirant[v.aspirantId] = [];
       const c = visitCounts.get(v.id);
@@ -812,7 +884,7 @@ export class AspirantsService {
     }
 
     return aspirants.map((aspirant) => {
-      const { user, ...rest } = aspirant as any;
+      const { user, ...rest } = aspirant;
       return {
         ...rest,
         email: user?.email ?? null,
@@ -821,8 +893,8 @@ export class AspirantsService {
         contactRating: contactRatings[aspirant.id] ?? this.emptyRating(),
         visits: visitsByAspirant[aspirant.id] ?? [],
         meetings: (aspirant.meetings || [])
-          .sort((a: any, b: any) => b.startTime - a.startTime)
-          .map((m: any) => {
+          .sort((a, b) => b.startTime! - a.startTime!)
+          .map((m) => {
             const c = meetingCounts.get(m.id);
             return {
               id: m.id,
@@ -883,10 +955,10 @@ export class AspirantsService {
       ).push(m);
     }
     for (const a of aspirants) {
-      (a as any).meetings = meetingsByAspirant.get(a.id) ?? [];
+      a.meetings = meetingsByAspirant.get(a.id) ?? [];
     }
-    const meetingIds = aspirants.flatMap(
-      (a) => (a.meetings ?? []).map((m: any) => m.id),
+    const meetingIds = aspirants.flatMap((a) =>
+      (a.meetings ?? []).map((m) => m.id),
     );
 
     const [
@@ -940,11 +1012,11 @@ export class AspirantsService {
       }
     }
 
-    const visitsByAspirant: Record<number, any[]> = {};
+    const visitsByAspirant: Record<number, VisitDto[]> = {};
     for (const v of allVisits) {
       if (!visitsByAspirant[v.aspirantId]) visitsByAspirant[v.aspirantId] = [];
       const c = visitCounts.get(v.id);
-      const visitData: any = {
+      const visitData: VisitDto = {
         id: v.id,
         createdAt: v.createdAt,
         updatedAt: v.updatedAt,
@@ -968,7 +1040,7 @@ export class AspirantsService {
     );
 
     return aspirants.map((aspirant) => {
-      const { user, ...rest } = aspirant as any;
+      const { user, ...rest } = aspirant;
       const voteCount = voteCounts[aspirant.id] ?? 0;
       return this.applyContactPrivacy({
         ...rest,
@@ -995,10 +1067,10 @@ export class AspirantsService {
           : {}),
         visits: visitsByAspirant[aspirant.id] ?? [],
         meetings: (aspirant.meetings || [])
-          .sort((a: any, b: any) => b.startTime - a.startTime)
-          .map((m: any) => {
+          .sort((a, b) => b.startTime! - a.startTime!)
+          .map((m) => {
             const c = meetingCounts.get(m.id);
-            const meetingData: any = {
+            const meetingData: MeetingDto = {
               id: m.id,
               createdAt: m.createdAt,
               updatedAt: m.updatedAt,
@@ -1028,16 +1100,16 @@ export class AspirantsService {
     return this.repo.findOne({ where: { id } });
   }
 
-  async findOne(id: number, currentUser?: any) {
+  async findOne(id: number, currentUser?: AuthUser) {
     if (id === 0) return this.getDemoAspirant();
 
     const aspirant = await this.repo.findOne({
       where: { id },
-      relations: { ward: true, user: true, meetings: true } as any,
+      relations: { ward: true, user: true, meetings: true },
     });
     if (!aspirant) return null;
 
-    const meetingIds = (aspirant.meetings || []).map((m: any) => m.id);
+    const meetingIds = (aspirant.meetings || []).map((m) => m.id);
     const visits = await this.visitRepo.find({
       where: { aspirantId: id },
       order: { startTime: "DESC" },
@@ -1054,8 +1126,8 @@ export class AspirantsService {
     ]);
 
     const mappedMeetings = (aspirant.meetings || [])
-      .sort((a: any, b: any) => b.startTime - a.startTime)
-      .map((m: any) => {
+      .sort((a, b) => b.startTime! - a.startTime!)
+      .map((m) => {
         const c = meetingCounts.get(m.id);
         return {
           id: m.id,
@@ -1115,9 +1187,19 @@ export class AspirantsService {
           const electionMap = new Map<
             number,
             { id: number; name: string; type: string }
-          >([[election.id, { id: election.id, name: election.name, type: election.type }]]);
+          >([
+            [
+              election.id,
+              { id: election.id, name: election.name, type: election.type },
+            ],
+          ]);
           const lookup = await this.resolveConstituencyNames(
-            [{ electionId: aspirant.electionId, constituencyId: aspirant.constituencyId }],
+            [
+              {
+                electionId: aspirant.electionId,
+                constituencyId: aspirant.constituencyId,
+              },
+            ],
             electionMap,
           );
           constituencyName =
@@ -1129,7 +1211,7 @@ export class AspirantsService {
       }
     }
 
-    const { user: _user, ...aspirantRest } = aspirant as any;
+    const { user: _user, ...aspirantRest } = aspirant;
     const result = {
       ...aspirantRest,
       isBlocked: aspirant.user?.isBlocked ?? false,
@@ -1167,13 +1249,13 @@ export class AspirantsService {
     const meeting = this.meetingRepo.create({
       aspirantId: aspirant.id,
       meetingLink,
-      platform: platform ?? "others",
+      platform: (platform ?? "others") as AspirantMeeting["platform"],
       startTime,
       endTime,
       title,
       description,
-    } as any);
-    const saved = (await this.meetingRepo.save(meeting)) as unknown as AspirantMeeting;
+    } satisfies DeepPartial<AspirantMeeting>);
+    const saved = await this.meetingRepo.save(meeting);
     try {
       const ctx = await this.resolveConstituencyContext(aspirant);
       if (ctx) {
@@ -1230,15 +1312,15 @@ export class AspirantsService {
       this.meetingRepo.create({
         aspirantId,
         meetingLink,
-        platform: platform ?? "others",
+        platform: (platform ?? "others") as AspirantMeeting["platform"],
         startTime,
         endTime,
         title,
         description,
-      } as any),
+      } satisfies DeepPartial<AspirantMeeting>),
     );
 
-    const saved = (await this.meetingRepo.save(meetings as any)) as unknown as AspirantMeeting[];
+    const saved = await this.meetingRepo.save(meetings);
     const meetingsByAspirant = new Map<number, AspirantMeeting>();
     for (const m of saved) meetingsByAspirant.set(m.aspirantId, m);
     await this.dispatchMeetingNotifications(aspirantIds, meetingsByAspirant);
@@ -1293,7 +1375,7 @@ export class AspirantsService {
     const foundIds = meetings.map((m) => m.id);
     const toDelete = meetingIds.filter((id) => foundIds.includes(id));
     if (toDelete.length === 0) return { deleted: 0 };
-    const res = await this.meetingRepo.delete(toDelete);
+    await this.meetingRepo.delete(toDelete);
     // TypeORM DeleteResult doesn't always include affected on some drivers; compute from found
     return { deleted: toDelete.length };
   }
@@ -1349,10 +1431,15 @@ export class AspirantsService {
 
     await this.repo.update(aspirant.id, {
       isActive: false,
+      // These columns are NULLable in the DB but typed as non-null `string` on
+      // the entity, so clearing them to NULL needs an `any` cast at the call site.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       sopUrl: null as any,
       sopAgreed: false,
       sopAgreedAt: null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       selfieUrl: null as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       phone: null as any,
     });
     await this.usersService.setRole(userId, "voter");
@@ -1403,8 +1490,12 @@ export class AspirantsService {
       "twitterLink",
       "whatsappNumber",
     ] as const;
+    const mutableAspirant = aspirant as Record<
+      (typeof updatableFields)[number],
+      unknown
+    >;
     for (const field of updatableFields) {
-      if (dto[field] !== undefined) (aspirant as any)[field] = dto[field];
+      if (dto[field] !== undefined) mutableAspirant[field] = dto[field];
     }
 
     await this.repo.save(aspirant);
@@ -1485,8 +1576,8 @@ export class AspirantsService {
     ] as number[];
     const elections = electionIds.length
       ? await this.repo.manager
-          .getRepository("Election")
-          .findBy({ id: In(electionIds) } as any)
+          .getRepository(Election)
+          .findBy({ id: In(electionIds) })
       : [];
 
     const electionNameMap = new Map<number, string>();
@@ -1494,7 +1585,7 @@ export class AspirantsService {
       number,
       { id: number; name: string; type: string }
     >();
-    for (const e of elections as any[]) {
+    for (const e of elections) {
       electionNameMap.set(e.id, e.name);
       electionMap.set(e.id, { id: e.id, name: e.name, type: e.type });
     }
@@ -1534,10 +1625,12 @@ export class AspirantsService {
    * removed entirely so the value never leaves the server. The allow* flags
    * themselves are preserved so the client knows which contact actions to show.
    */
-  private applyContactPrivacy<T extends Record<string, any>>(aspirant: T): T {
+  private applyContactPrivacy<T extends Record<string, unknown>>(
+    aspirant: T,
+  ): T {
     if (!aspirant) return aspirant;
-    if (aspirant.allowPhone === false) delete (aspirant as any).phone;
-    if (aspirant.allowWhatsapp === false) delete (aspirant as any).whatsappNumber;
+    if (aspirant.allowPhone === false) delete aspirant.phone;
+    if (aspirant.allowWhatsapp === false) delete aspirant.whatsappNumber;
     return aspirant;
   }
 
@@ -1743,10 +1836,10 @@ export class AspirantsService {
 
   private async getActivityRatingsBulk(aspirantIds: number[]) {
     const emptyResult = {
-      meetingRatings: {} as Record<number, any>,
-      visitRatings: {} as Record<number, any>,
-      contactRatings: {} as Record<number, any>,
-      overallRatings: {} as Record<number, any>,
+      meetingRatings: {} as Record<number, Rating>,
+      visitRatings: {} as Record<number, Rating>,
+      contactRatings: {} as Record<number, Rating>,
+      overallRatings: {} as Record<number, Rating>,
     };
     if (!aspirantIds.length) return emptyResult;
 
@@ -1760,7 +1853,13 @@ export class AspirantsService {
       .addSelect("COUNT(r.id)", "count")
       .where("r.aspirantId IN (:...aspirantIds)", { aspirantIds })
       .groupBy("r.type, r.activityId, r.aspirantId, r.rating")
-      .getRawMany();
+      .getRawMany<{
+        type: string;
+        activityId: number;
+        aspirantId: number;
+        rating: number;
+        count: string;
+      }>();
 
     // Build per-activity rating data
     const activityMap: Record<
@@ -1788,10 +1887,10 @@ export class AspirantsService {
       activityMap[key].distribution[row.rating] = cnt;
     }
 
-    const meetingRatings: Record<number, any> = {};
-    const visitRatings: Record<number, any> = {};
+    const meetingRatings: Record<number, Rating> = {};
+    const visitRatings: Record<number, Rating> = {};
     // Contact ratings are keyed by aspirantId (activityId === aspirantId).
-    const contactRatings: Record<number, any> = {};
+    const contactRatings: Record<number, Rating> = {};
     const overallSums: Record<
       number,
       { sum: number; count: number; distribution: Record<number, number> }
@@ -1825,7 +1924,7 @@ export class AspirantsService {
       }
     }
 
-    const overallRatings: Record<number, any> = {};
+    const overallRatings: Record<number, Rating> = {};
     for (const [id, s] of Object.entries(overallSums)) {
       overallRatings[Number(id)] = {
         averageRating:

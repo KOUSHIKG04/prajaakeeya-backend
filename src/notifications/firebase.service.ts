@@ -61,7 +61,9 @@ export class FirebaseService implements OnModuleInit {
         : admin.initializeApp({
             credential: admin.credential.cert(serviceAccount),
           });
-      this.logger.log("Firebase Admin initialised — push notifications enabled.");
+      this.logger.log(
+        "Firebase Admin initialised — push notifications enabled.",
+      );
     } catch (err) {
       this.logger.error(
         `Failed to initialise Firebase Admin: ${(err as Error).message}. ` +
@@ -84,7 +86,9 @@ export class FirebaseService implements OnModuleInit {
         return JSON.parse(inline) as admin.ServiceAccount;
       }
       if (path && path.trim()) {
-        return JSON.parse(fs.readFileSync(path, "utf8")) as admin.ServiceAccount;
+        return JSON.parse(
+          fs.readFileSync(path, "utf8"),
+        ) as admin.ServiceAccount;
       }
     } catch (err) {
       this.logger.error(
@@ -107,7 +111,10 @@ export class FirebaseService implements OnModuleInit {
     if (!token) return;
     const existing = await this.tokenRepo.findOne({ where: { token } });
     if (existing) {
-      if (existing.userId !== userId || (platform && existing.platform !== platform)) {
+      if (
+        existing.userId !== userId ||
+        (platform && existing.platform !== platform)
+      ) {
         existing.userId = userId;
         if (platform) existing.platform = platform;
         await this.tokenRepo.save(existing);
