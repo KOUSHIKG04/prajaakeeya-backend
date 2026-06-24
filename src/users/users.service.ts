@@ -97,7 +97,7 @@ export class UsersService {
    * The cache TTL matches the longest JWT lifetime: once every old token
    * has expired naturally, the revocation marker is no longer needed.
    */
-  private async revokeAllSessions(userId: number): Promise<number> {
+  async revokeAllSessions(userId: number): Promise<number> {
     const fresh = await this.repo
       .createQueryBuilder()
       .update(User)

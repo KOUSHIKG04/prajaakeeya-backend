@@ -32,7 +32,7 @@ describe("AuthController — cookie sessions (e2e, no DB)", () => {
       profile: { id: 7, role: "voter" },
     })),
     rotateRefresh: jest.fn(async () => session()),
-    decodeRefreshSub: jest.fn(() => 7),
+    verifyRefreshSub: jest.fn(async () => 7),
     revokeSession: jest.fn(async () => undefined),
   };
 
@@ -119,7 +119,7 @@ describe("AuthController — cookie sessions (e2e, no DB)", () => {
       .post("/api/auth/logout")
       .set("Cookie", "refresh_token=rt")
       .expect(200);
-    expect(authService.decodeRefreshSub).toHaveBeenCalledWith("rt");
+    expect(authService.verifyRefreshSub).toHaveBeenCalledWith("rt");
     expect(authService.revokeSession).toHaveBeenCalledWith(7);
     const joined: string = (
       (res.headers["set-cookie"] ?? []) as unknown as string[]
