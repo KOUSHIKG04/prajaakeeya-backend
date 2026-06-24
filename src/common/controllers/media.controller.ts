@@ -123,19 +123,7 @@ export class MediaController {
       properties: {
         documentType: {
           type: "string",
-          enum: [
-            "sop",
-            "sop_kannada",
-            "agreement",
-            "property_declaration",
-            "code_of_conduct",
-            "resume",
-            "epic_card",
-            "epic_card_back",
-            "address_proof",
-            "recent_photo",
-            "selfie",
-          ],
+          enum: ["sop", "recent_photo", "selfie"],
           description: "Type of document being uploaded",
         },
         file: {
@@ -175,19 +163,7 @@ export class MediaController {
   @ApiParam({
     name: "documentType",
     description: "Type of document to verify",
-    enum: [
-      "sop",
-      "sop_kannada",
-      "agreement",
-      "property_declaration",
-      "code_of_conduct",
-      "resume",
-      "epic_card",
-      "epic_card_back",
-      "address_proof",
-      "recent_photo",
-      "selfie",
-    ],
+    enum: ["sop", "recent_photo", "selfie"],
     example: "sop",
   })
   @ApiResponse({

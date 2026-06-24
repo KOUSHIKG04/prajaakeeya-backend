@@ -363,16 +363,6 @@ export class AspirantsService {
       phone: dto.phone,
       address: dto.address,
       manifesto: dto.manifesto,
-      identityBackground: dto.identityBackground,
-      resignationPledge: dto.resignationPledge,
-      financialIntegrity: dto.financialIntegrity,
-      noHighCommand: dto.noHighCommand,
-      technicalCompetence: dto.technicalCompetence,
-      transparency: dto.transparency,
-      emergencyProtocol: dto.emergencyProtocol,
-      expertConsultation: dto.expertConsultation,
-      voterFeedback: dto.voterFeedback,
-      primaryRule: dto.primaryRule,
       instagramLink: dto.instagramLink,
       facebookLink: dto.facebookLink,
       linkedinLink: dto.linkedinLink,
@@ -788,7 +778,19 @@ export class AspirantsService {
     });
   }
 
-  async getVisitResponses(visitId: number) {
+  async getVisitResponses(visitId: number, user?: AuthUser) {
+    const visit = await this.visitRepo.findOne({
+      where: { id: visitId },
+      relations: ["aspirant"],
+    });
+    if (!visit) throw new NotFoundException("Visit not found");
+    // BOLA guard: only the owning aspirant or an admin may view a visit's
+    // responses (who RSVP'd) — a non-owner could otherwise enumerate them.
+    if (user && user.role !== "admin" && visit.aspirant?.userId !== user.id) {
+      throw new ForbiddenException(
+        "You do not have permission to view responses for this visit",
+      );
+    }
     return this.visitResponseRepo.find({ where: { visitId } });
   }
 
@@ -887,7 +889,6 @@ export class AspirantsService {
       const { user, ...rest } = aspirant;
       return {
         ...rest,
-        email: user?.email ?? null,
         voteCount: voteCounts[aspirant.id] ?? 0,
         overallRating: overallRatings[aspirant.id] ?? this.emptyRating(),
         contactRating: contactRatings[aspirant.id] ?? this.emptyRating(),
@@ -1044,7 +1045,6 @@ export class AspirantsService {
       const voteCount = voteCounts[aspirant.id] ?? 0;
       return this.applyContactPrivacy({
         ...rest,
-        email: user?.email ?? null,
         voteCount,
         votePercentage:
           totalVotes > 0
@@ -1624,6 +1624,9 @@ export class AspirantsService {
    * allowWhatsapp is true. When a flag is false the corresponding field is
    * removed entirely so the value never leaves the server. The allow* flags
    * themselves are preserved so the client knows which contact actions to show.
+   *
+   * The aspirant's account email is PII and is never exposed in these
+   * public/non-owner responses — it is always stripped.
    */
   private applyContactPrivacy<T extends Record<string, unknown>>(
     aspirant: T,
@@ -1631,6 +1634,7 @@ export class AspirantsService {
     if (!aspirant) return aspirant;
     if (aspirant.allowPhone === false) delete aspirant.phone;
     if (aspirant.allowWhatsapp === false) delete aspirant.whatsappNumber;
+    delete aspirant.email;
     return aspirant;
   }
 
@@ -1690,25 +1694,6 @@ export class AspirantsService {
       electionId: electionId ?? null,
       constituencyId: constituencyId ?? null,
       userId: null,
-      identityBackground:
-        "Demo aspirant with experience in community development and civic tech.",
-      resignationPledge:
-        "Yes — I will sign a legal affidavit to resign if poll < 50%.",
-      financialIntegrity:
-        "I will declare all family assets on the portal before primary selection.",
-      noHighCommand: "I will follow the digital vote of the ward citizens.",
-      technicalCompetence:
-        "All budgets will be submitted to Expert Portal for verification before polling.",
-      transparency:
-        "I agree to upload every bill and receipt to the Live Ledger within 24 hours.",
-      emergencyProtocol:
-        "I will publish a timestamped justification and notify experts and voters immediately.",
-      expertConsultation:
-        "Yes — will consult at least three registered experts for projects > ₹1 Lakh.",
-      voterFeedback:
-        "I will revise the plan and resubmit it for a corrective poll or accept majority rejection.",
-      primaryRule:
-        "Yes — I will withdraw my nomination and support the selected person.",
       instagramLink: "https://instagram.com/prajaakeeya",
       facebookLink: "https://facebook.com/prajaakeeya",
       linkedinLink: null,

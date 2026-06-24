@@ -949,12 +949,6 @@ export class UsersService {
         [userId],
       );
 
-      // OTPs
-      await queryRunner.query(
-        `DELETE FROM "otps" WHERE "email" = $1 OR "phone" = $2`,
-        [user.email, user.phone],
-      );
-
       // Pending aspirant registrations
       await queryRunner.query(
         `DELETE FROM "pending_aspirant_registrations" WHERE "userId" = $1`,
