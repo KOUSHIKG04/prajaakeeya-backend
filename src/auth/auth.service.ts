@@ -186,14 +186,34 @@ export class AuthService {
   /** Revoke the user's refresh session (logout / block). */
   async revokeSession(userId: number): Promise<void> {
     await this.usersService.setRefreshTokenHash(userId, null);
+    // Also bump tokenVersion so the short-lived access token is rejected
+    // immediately (the strategy reads the new version from cache) rather than
+    // surviving until its ~15-min TTL. Best-effort — clearing the refresh hash
+    // already stops the session from being renewed.
+    await this.usersService.revokeAllSessions(userId).catch(() => undefined);
   }
 
-  /** Best-effort decode of a refresh token's subject (logout — no verify). */
-  decodeRefreshSub(refreshToken: string): number | null {
-    const decoded = this.jwtService.decode(refreshToken) as {
-      sub?: number;
-    } | null;
-    return decoded?.sub ?? null;
+  /**
+   * Verify a refresh token's signature + type and return its subject, or null
+   * if missing/invalid/forged/expired. Used by logout: the refresh sub must be
+   * VERIFIED (not just decoded) before it drives revocation, otherwise an
+   * unauthenticated caller could forge `{ sub: N }` and force a session bump /
+   * DB write for any user id.
+   */
+  async verifyRefreshSub(refreshToken: string): Promise<number | null> {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub?: number;
+        type?: string;
+      }>(refreshToken, {
+        secret: this.refreshSecret(),
+        algorithms: ["HS256"],
+      });
+      if (payload.type !== "refresh" || !payload.sub) return null;
+      return payload.sub;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -438,8 +458,12 @@ export class AuthService {
     //    redirects with the code — the JWT itself never enters the URL (a URL
     //    token leaks into server/proxy access logs, browser history and the
     //    Referer header). The code is redeemed via POST /auth/google/exchange,
-    //    which sets the httpOnly session cookie.
-    const jwt = await this.jwtService.signAsync(this.buildJwtPayload(user!));
+    //    which sets the httpOnly session cookie. This token is only an identity
+    //    carrier consumed within the 60s one-time-code window, so cap it at 5m
+    //    instead of inheriting the 24h module default.
+    const jwt = await this.jwtService.signAsync(this.buildJwtPayload(user!), {
+      expiresIn: "5m",
+    });
 
     return { token: jwt, user: user! };
   }

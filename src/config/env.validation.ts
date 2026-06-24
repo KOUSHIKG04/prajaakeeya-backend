@@ -97,5 +97,19 @@ export function validate(config: Record<string, unknown>) {
   if (errors.length > 0) {
     throw new Error(`Environment validation failed:\n${errors.toString()}`);
   }
+
+  // CSRF guard: SameSite=None drops the browser's built-in cross-site cookie
+  // protection, so it must not be used in production unless a dedicated CSRF
+  // defence is added. Fail closed at boot rather than ship a CSRF-open config.
+  if (
+    validatedConfig.NODE_ENV === Environment.Production &&
+    (validatedConfig.COOKIE_SAMESITE ?? "").toLowerCase() === "none"
+  ) {
+    throw new Error(
+      "COOKIE_SAMESITE=none is not allowed when NODE_ENV=production (CSRF risk). " +
+        "Use SameSite=Lax with a same-site frontend, or add CSRF tokens before enabling None.",
+    );
+  }
+
   return validatedConfig;
 }

@@ -203,18 +203,20 @@ export class AuthController {
   }
 
   @Post("logout")
+  @Throttle(STRICT_AUTH_THROTTLE)
   @HttpCode(200)
   @ApiOperation({
     summary: "Log out — revoke the refresh session and clear cookies",
   })
   @ApiResponse({ status: 200, description: "Logged out" })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    // Best-effort server-side revocation: clear the stored refresh hash so the
-    // refresh token dies immediately, then clear both cookies. Succeeds even
-    // when no session was present.
+    // Server-side revocation is gated on a *verified* refresh token: a forged /
+    // unsigned cookie must not be able to drive a revocation (DB token bump +
+    // cache write) for an arbitrary user id. An invalid/expired token simply
+    // clears the cookies — logout still succeeds. Throttled to bound abuse.
     const refreshToken = readCookie(req, REFRESH_COOKIE_NAME);
     const userId = refreshToken
-      ? this.authService.decodeRefreshSub(refreshToken)
+      ? await this.authService.verifyRefreshSub(refreshToken)
       : null;
     if (userId) {
       await this.authService.revokeSession(userId);
