@@ -105,54 +105,6 @@ export class MediaService {
         aspirant.sopUrl = url;
         aspirant.sopStatus = "pending";
         break;
-      case "sop_kannada":
-        if (aspirant.sopKannadaUrl)
-          await this.s3Service.deleteFile(aspirant.sopKannadaUrl);
-        aspirant.sopKannadaUrl = url;
-        aspirant.sopKannadaStatus = "pending";
-        break;
-      case "agreement":
-        if (aspirant.agreementUrl)
-          await this.s3Service.deleteFile(aspirant.agreementUrl);
-        aspirant.agreementUrl = url;
-        aspirant.agreementStatus = "pending";
-        break;
-      case "property_declaration":
-        if (aspirant.propertyDeclarationUrl)
-          await this.s3Service.deleteFile(aspirant.propertyDeclarationUrl);
-        aspirant.propertyDeclarationUrl = url;
-        aspirant.propertyDeclarationStatus = "pending";
-        break;
-      case "code_of_conduct":
-        if (aspirant.codeOfConductUrl)
-          await this.s3Service.deleteFile(aspirant.codeOfConductUrl);
-        aspirant.codeOfConductUrl = url;
-        aspirant.codeOfConductStatus = "pending";
-        break;
-      case "resume":
-        if (aspirant.resumeUrl)
-          await this.s3Service.deleteFile(aspirant.resumeUrl);
-        aspirant.resumeUrl = url;
-        aspirant.resumeStatus = "pending";
-        break;
-      case "epic_card":
-        if (aspirant.epicCardUrl)
-          await this.s3Service.deleteFile(aspirant.epicCardUrl);
-        aspirant.epicCardUrl = url;
-        aspirant.epicCardStatus = "pending";
-        break;
-      case "epic_card_back":
-        if (aspirant.epicCardBackUrl)
-          await this.s3Service.deleteFile(aspirant.epicCardBackUrl);
-        aspirant.epicCardBackUrl = url;
-        aspirant.epicCardBackStatus = "pending";
-        break;
-      case "address_proof":
-        if (aspirant.addressProofUrl)
-          await this.s3Service.deleteFile(aspirant.addressProofUrl);
-        aspirant.addressProofUrl = url;
-        aspirant.addressProofStatus = "pending";
-        break;
       case "recent_photo":
         if (aspirant.recentPhotoUrl)
           await this.s3Service.deleteFile(aspirant.recentPhotoUrl);
@@ -214,30 +166,6 @@ export class MediaService {
     switch (documentType) {
       case "sop":
         aspirant.sopStatus = verifyDto.status;
-        break;
-      case "sop_kannada":
-        aspirant.sopKannadaStatus = verifyDto.status;
-        break;
-      case "agreement":
-        aspirant.agreementStatus = verifyDto.status;
-        break;
-      case "property_declaration":
-        aspirant.propertyDeclarationStatus = verifyDto.status;
-        break;
-      case "code_of_conduct":
-        aspirant.codeOfConductStatus = verifyDto.status;
-        break;
-      case "resume":
-        aspirant.resumeStatus = verifyDto.status;
-        break;
-      case "epic_card":
-        aspirant.epicCardStatus = verifyDto.status;
-        break;
-      case "epic_card_back":
-        aspirant.epicCardBackStatus = verifyDto.status;
-        break;
-      case "address_proof":
-        aspirant.addressProofStatus = verifyDto.status;
         break;
       case "recent_photo":
         aspirant.recentPhotoStatus = verifyDto.status;

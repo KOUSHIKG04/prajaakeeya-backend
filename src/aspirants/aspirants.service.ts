@@ -363,16 +363,6 @@ export class AspirantsService {
       phone: dto.phone,
       address: dto.address,
       manifesto: dto.manifesto,
-      identityBackground: dto.identityBackground,
-      resignationPledge: dto.resignationPledge,
-      financialIntegrity: dto.financialIntegrity,
-      noHighCommand: dto.noHighCommand,
-      technicalCompetence: dto.technicalCompetence,
-      transparency: dto.transparency,
-      emergencyProtocol: dto.emergencyProtocol,
-      expertConsultation: dto.expertConsultation,
-      voterFeedback: dto.voterFeedback,
-      primaryRule: dto.primaryRule,
       instagramLink: dto.instagramLink,
       facebookLink: dto.facebookLink,
       linkedinLink: dto.linkedinLink,
@@ -1690,25 +1680,6 @@ export class AspirantsService {
       electionId: electionId ?? null,
       constituencyId: constituencyId ?? null,
       userId: null,
-      identityBackground:
-        "Demo aspirant with experience in community development and civic tech.",
-      resignationPledge:
-        "Yes — I will sign a legal affidavit to resign if poll < 50%.",
-      financialIntegrity:
-        "I will declare all family assets on the portal before primary selection.",
-      noHighCommand: "I will follow the digital vote of the ward citizens.",
-      technicalCompetence:
-        "All budgets will be submitted to Expert Portal for verification before polling.",
-      transparency:
-        "I agree to upload every bill and receipt to the Live Ledger within 24 hours.",
-      emergencyProtocol:
-        "I will publish a timestamped justification and notify experts and voters immediately.",
-      expertConsultation:
-        "Yes — will consult at least three registered experts for projects > ₹1 Lakh.",
-      voterFeedback:
-        "I will revise the plan and resubmit it for a corrective poll or accept majority rejection.",
-      primaryRule:
-        "Yes — I will withdraw my nomination and support the selected person.",
       instagramLink: "https://instagram.com/prajaakeeya",
       facebookLink: "https://facebook.com/prajaakeeya",
       linkedinLink: null,
