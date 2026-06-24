@@ -478,6 +478,13 @@ export class NotificationsService {
         .andWhere("u.is_self_deleted = false")
         .andWhere("u.id != :senderId", { senderId: args.senderId });
 
+      // Recipients = the distinct users who have posted in THIS aspirant's chat
+      // (the subquery), PLUS the aspirant's own user account. The OR-branch adds
+      // the aspirant even if they have not posted a message yet, so they're
+      // still notified of replies; it stays INSIDE the same outer u.* predicate,
+      // so the is_blocked / is_self_deleted / != sender filters apply to the
+      // aspirant too. When the aspirant has no user account (or is the sender),
+      // we fall back to just the chat-participants subquery.
       if (args.aspirantUserId && args.aspirantUserId !== args.senderId) {
         qb.andWhere(
           `(u.id = :aspirantUserId OR u.id IN (

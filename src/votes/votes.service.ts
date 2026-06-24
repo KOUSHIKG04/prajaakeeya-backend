@@ -166,22 +166,30 @@ export class VotesService {
 
     const saved = await this.votingWindowRepo.save(window);
 
-    // Fan out an in-app notification to every active user. Best-effort:
-    // notification failures must not block window creation.
-    try {
-      const withRelations = await this.votingWindowRepo.findOne({
-        where: { id: saved.id },
-        relations: ["election"],
-      });
-      await this.notificationsService.notifyVotingWindowOpened({
-        startTime: Number(saved.startTime),
-        endTime: Number(saved.endTime),
-        description: saved.description ?? null,
-        electionName: withRelations?.election?.name ?? null,
-      });
-    } catch {
-      /* best-effort */
-    }
+    // Fan out the in-app notification to every active user OFF the request
+    // path. At ~75k users this broadcast takes ~15-20s; awaiting it inline
+    // would block the admin's HTTP response and, at higher scale, cross the
+    // ALB/Nginx 60s timeout. setImmediate defers it to after the response is
+    // sent. Best-effort & fire-and-forget — failures must not affect window
+    // creation. (A job queue like BullMQ would be the heavier alternative.)
+    setImmediate(() => {
+      void (async () => {
+        try {
+          const withRelations = await this.votingWindowRepo.findOne({
+            where: { id: saved.id },
+            relations: ["election"],
+          });
+          await this.notificationsService.notifyVotingWindowOpened({
+            startTime: Number(saved.startTime),
+            endTime: Number(saved.endTime),
+            description: saved.description ?? null,
+            electionName: withRelations?.election?.name ?? null,
+          });
+        } catch {
+          /* best-effort */
+        }
+      })();
+    });
 
     return saved;
   }

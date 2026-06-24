@@ -1,7 +1,7 @@
 import "./instrument"; // MUST be first — initialises Sentry before anything else
-import { NestFactory } from "@nestjs/core";
+import { NestFactory, Reflector } from "@nestjs/core";
 import { AppModule } from "./app.module";
-import { ValidationPipe } from "@nestjs/common";
+import { ClassSerializerInterceptor, ValidationPipe } from "@nestjs/common";
 import { SwaggerModule, DocumentBuilder } from "@nestjs/swagger";
 import helmet from "helmet";
 import { MulterExceptionFilter } from "./common/filters/multer-exception.filter";
@@ -41,6 +41,11 @@ async function bootstrap() {
       forbidNonWhitelisted: true,
     }),
   );
+  // Serialize responses through class-transformer so entity-level @Exclude
+  // (e.g. User.passwordHash / passwordSalt / refreshTokenHash) is honoured on
+  // every endpoint that returns an entity — credential material can never leak
+  // by being returned or spread.
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
   app.useGlobalFilters(new MulterExceptionFilter());
 
   // CORS: restrict origins based on environment

@@ -592,13 +592,14 @@ export class AuthService {
     // Resolve the aspirant's election type once so the saved-constituency
     // helper can use the aspirant record as a fallback when the user's
     // own constituency IDs are unset.
-    let aspirantElectionType: string | null = null;
-    if (aspirant?.electionId) {
-      const election = await this.electionsService
-        .findById(aspirant.electionId)
-        .catch(() => null);
-      aspirantElectionType = election?.type ?? null;
-    }
+    // Fetch the aspirant's election ONCE and reuse it in the `if (aspirant)`
+    // block below — avoids a duplicate findById on the same id.
+    const aspirantElection = aspirant?.electionId
+      ? await this.electionsService
+          .findById(aspirant.electionId)
+          .catch(() => null)
+      : null;
+    const aspirantElectionType: string | null = aspirantElection?.type ?? null;
     const savedConstituencies = await this.resolveSavedConstituencies(
       user,
       aspirant,
@@ -641,17 +642,12 @@ export class AuthService {
       result.allowWhatsapp = aspirant.allowWhatsapp;
       result.allowChat = aspirant.allowChat;
 
-      // Resolve election/constituency/aspirant-ward in parallel.
-      const [election, aspirantWard] = await Promise.all([
-        aspirant.electionId
-          ? this.electionsService
-              .findById(aspirant.electionId)
-              .catch(() => null)
-          : Promise.resolve(null),
-        aspirant.wardId
-          ? this.wardsService.findOne(aspirant.wardId).catch(() => null)
-          : Promise.resolve(null),
-      ]);
+      // Reuse the election fetched above (no second findById); only the
+      // aspirant's ward still needs loading.
+      const election = aspirantElection;
+      const aspirantWard = aspirant.wardId
+        ? await this.wardsService.findOne(aspirant.wardId).catch(() => null)
+        : null;
 
       if (election) {
         result.electionName = election.name;
