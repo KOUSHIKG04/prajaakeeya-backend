@@ -778,7 +778,19 @@ export class AspirantsService {
     });
   }
 
-  async getVisitResponses(visitId: number) {
+  async getVisitResponses(visitId: number, user?: AuthUser) {
+    const visit = await this.visitRepo.findOne({
+      where: { id: visitId },
+      relations: ["aspirant"],
+    });
+    if (!visit) throw new NotFoundException("Visit not found");
+    // BOLA guard: only the owning aspirant or an admin may view a visit's
+    // responses (who RSVP'd) — a non-owner could otherwise enumerate them.
+    if (user && user.role !== "admin" && visit.aspirant?.userId !== user.id) {
+      throw new ForbiddenException(
+        "You do not have permission to view responses for this visit",
+      );
+    }
     return this.visitResponseRepo.find({ where: { visitId } });
   }
 
@@ -877,7 +889,6 @@ export class AspirantsService {
       const { user, ...rest } = aspirant;
       return {
         ...rest,
-        email: user?.email ?? null,
         voteCount: voteCounts[aspirant.id] ?? 0,
         overallRating: overallRatings[aspirant.id] ?? this.emptyRating(),
         contactRating: contactRatings[aspirant.id] ?? this.emptyRating(),
@@ -1034,7 +1045,6 @@ export class AspirantsService {
       const voteCount = voteCounts[aspirant.id] ?? 0;
       return this.applyContactPrivacy({
         ...rest,
-        email: user?.email ?? null,
         voteCount,
         votePercentage:
           totalVotes > 0
@@ -1614,6 +1624,9 @@ export class AspirantsService {
    * allowWhatsapp is true. When a flag is false the corresponding field is
    * removed entirely so the value never leaves the server. The allow* flags
    * themselves are preserved so the client knows which contact actions to show.
+   *
+   * The aspirant's account email is PII and is never exposed in these
+   * public/non-owner responses — it is always stripped.
    */
   private applyContactPrivacy<T extends Record<string, unknown>>(
     aspirant: T,
@@ -1621,6 +1634,7 @@ export class AspirantsService {
     if (!aspirant) return aspirant;
     if (aspirant.allowPhone === false) delete aspirant.phone;
     if (aspirant.allowWhatsapp === false) delete aspirant.whatsappNumber;
+    delete aspirant.email;
     return aspirant;
   }
 

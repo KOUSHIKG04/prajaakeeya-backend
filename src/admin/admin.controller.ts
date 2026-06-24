@@ -34,12 +34,18 @@ import { CreateMunicipalityDto } from "../geography/dto/create-municipality.dto"
 import { CreateWardDto } from "../wards/dto/create-ward.dto";
 import { CreateGramaPanchayatDto } from "../grama-panchayat/dto/create-grama-panchayat.dto";
 import { AuthUser } from "../common/decorators/current-user.decorator";
+import { Throttle } from "@nestjs/throttler";
+
+// Stricter throttle for admin endpoints to limit abuse from a compromised
+// admin session (e.g. mass destructive actions).
+const ADMIN_THROTTLE = { default: { ttl: 60_000, limit: 60 } };
 
 @ApiTags("Admin")
 @Controller("admin")
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles("admin")
 @ApiBearerAuth()
+@Throttle(ADMIN_THROTTLE)
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
 

@@ -406,8 +406,11 @@ export class AspirantsController {
     description: "Visit ID",
     example: 10,
   })
-  getVisitResponses(@Param("visitId") visitId: string) {
-    return this.aspirantsService.getVisitResponses(Number(visitId));
+  getVisitResponses(
+    @Param("visitId") visitId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.aspirantsService.getVisitResponses(Number(visitId), user);
   }
 
   @Delete("meeting")
