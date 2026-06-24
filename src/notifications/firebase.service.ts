@@ -177,12 +177,15 @@ export class FirebaseService implements OnModuleInit {
         });
         res.responses.forEach((r, idx) => {
           if (!r.success && r.error) {
-            // TEMPORARY DIAGNOSTIC: surface the real FCM error code. iOS-only
-            // non-delivery typically shows `messaging/third-party-auth-error`
-            // (= APNs key/.p8 not configured in Firebase). Remove once confirmed.
-            this.logger.warn(`FCM send failed: ${r.error.code}`);
             if (PRUNE_ERROR_CODES.has(r.error.code)) {
+              // Routine churn — token belongs to an uninstalled app / rotated
+              // device. Prune it quietly; the "Pruned N tokens" debug summary
+              // below is enough. No need to WARN per dead token.
               invalid.push(batch[idx]);
+            } else {
+              // An unexpected delivery failure (e.g. third-party-auth-error =
+              // APNs key misconfig, or message-rate-exceeded) — keep it visible.
+              this.logger.warn(`FCM send failed: ${r.error.code}`);
             }
           }
         });
