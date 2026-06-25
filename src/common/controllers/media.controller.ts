@@ -64,7 +64,10 @@ export class MediaController {
     @Query("key") key: string,
     @Query("expires") expires?: string,
   ) {
-    const exp = expires ? parseInt(expires, 10) : 3600;
+    // Clamp the requested expiry to [60s, 1h]: rejects junk/NaN, prevents a
+    // long-lived (or effectively non-expiring) signed URL being minted.
+    const raw = expires ? parseInt(expires, 10) : 3600;
+    const exp = Math.min(Math.max(Number.isFinite(raw) ? raw : 3600, 60), 3600);
     const url = await this.mediaService.getPresignedUrl(key, exp);
     return { url, expiresIn: exp };
   }
