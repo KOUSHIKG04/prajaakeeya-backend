@@ -15,11 +15,11 @@ const IMMUTABLE_CACHE_HEADER = "public, max-age=31536000, immutable";
 
 @Injectable()
 export class S3Service {
-  private s3Client: S3Client;
-  private bucketName: string;
-  private cdnDomain?: string;
+  private readonly s3Client: S3Client;
+  private readonly bucketName: string;
+  private readonly cdnDomain?: string;
 
-  constructor(private configService: ConfigService) {
+  constructor(private readonly configService: ConfigService) {
     this.s3Client = new S3Client({
       region: this.configService.get("AWS_REGION") || "ap-south-1",
       credentials: {
