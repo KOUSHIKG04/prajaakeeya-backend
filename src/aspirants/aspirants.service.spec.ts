@@ -570,9 +570,9 @@ describe("AspirantsService — deleteVisit()", () => {
 describe("AspirantsService — deleteMeetings() ownership", () => {
   it("rejects a non-admin caller who does not own all meetings", async () => {
     const service = buildService({
-      repo: { findByIds: jest.fn() },
+      repo: { findBy: jest.fn() },
       meetingRepo: {
-        findByIds: jest.fn(async () => [{ id: 10, aspirantId: 99 }]),
+        findBy: jest.fn(async () => [{ id: 10, aspirantId: 99 }]),
       },
     });
     jest.spyOn(service, "findByUserId").mockResolvedValue({ id: 54 });
@@ -586,7 +586,7 @@ describe("AspirantsService — deleteMeetings() ownership", () => {
     const deleteFn = jest.fn(async () => ({}));
     const service = buildService({
       meetingRepo: {
-        findByIds: jest.fn(async () => [{ id: 10, aspirantId: 54 }]),
+        findBy: jest.fn(async () => [{ id: 10, aspirantId: 54 }]),
         delete: deleteFn,
       },
     });
@@ -631,7 +631,7 @@ describe("AspirantsService — setMeetingLinkForMultiple() ownership", () => {
   it("rejects a non-admin caller who does not own every aspirant id", async () => {
     const service = buildService({
       repo: {
-        findByIds: jest.fn(async () => [{ id: 54 }, { id: 99 }]),
+        findBy: jest.fn(async () => [{ id: 54 }, { id: 99 }]),
       },
     });
     jest.spyOn(service, "findByUserId").mockResolvedValue({ id: 54 });
