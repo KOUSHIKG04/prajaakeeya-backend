@@ -3,8 +3,10 @@ import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PassportModule } from "@nestjs/passport";
 import { CACHE_MANAGER } from "@nestjs/cache-manager";
+import { getRepositoryToken } from "@nestjs/typeorm";
 import * as jwt from "jsonwebtoken";
 import { JwtStrategy } from "../../src/auth/strategies/jwt.strategy";
+import { User } from "../../src/users/user.entity";
 
 /**
  * HTTP-level e2e harness (NO database).
@@ -31,17 +33,33 @@ export interface E2EOptions {
   providers?: any[];
 }
 
-export async function createE2EApp(opts: E2EOptions): Promise<INestApplication> {
+export async function createE2EApp(
+  opts: E2EOptions,
+): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
     imports: [PassportModule],
     controllers: opts.controllers,
     providers: [
       JwtStrategy,
       // The strategy reads a cached tokenVersion for revocation; undefined =>
-      // "not revoked", which is what we want for valid test tokens.
+      // cache miss, which triggers the DB read-through below.
       {
         provide: CACHE_MANAGER,
         useValue: { get: async () => undefined, set: async () => undefined },
+      },
+      // On a cache miss the strategy resolves the user from the DB; supply an
+      // active user (tokenVersion 0, not blocked/deleted) so valid test tokens
+      // pass the read-through revocation check.
+      {
+        provide: getRepositoryToken(User),
+        useValue: {
+          findOne: async () => ({
+            id: 0,
+            tokenVersion: 0,
+            isBlocked: false,
+            isSelfDeleted: false,
+          }),
+        },
       },
       ...(opts.providers ?? []),
     ],

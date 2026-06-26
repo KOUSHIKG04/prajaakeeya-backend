@@ -2,6 +2,8 @@ import { Module } from "@nestjs/common";
 import { JwtModule } from "@nestjs/jwt";
 import { PassportModule } from "@nestjs/passport";
 import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { User } from "../users/user.entity";
 import { UsersModule } from "../users/users.module";
 import { AspirantsModule } from "../aspirants/aspirants.module";
 import { WardsModule } from "../wards/wards.module";
@@ -17,6 +19,9 @@ import { S3Service } from "../common/services/s3.service";
 @Module({
   imports: [
     ConfigModule,
+    // The User repo is injected by JwtStrategy for the read-through revocation
+    // check on a tokenVersion cache miss.
+    TypeOrmModule.forFeature([User]),
     UsersModule,
     WardsModule,
     AspirantsModule,
@@ -38,11 +43,7 @@ import { S3Service } from "../common/services/s3.service";
     }),
   ],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    JwtStrategy,
-    S3Service,
-  ],
+  providers: [AuthService, JwtStrategy, S3Service],
   exports: [JwtStrategy],
 })
 export class AuthModule {}

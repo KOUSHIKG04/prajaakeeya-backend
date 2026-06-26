@@ -1,7 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import {
   S3Client,
-  PutObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
 } from "@aws-sdk/client-s3";
@@ -16,11 +15,11 @@ const IMMUTABLE_CACHE_HEADER = "public, max-age=31536000, immutable";
 
 @Injectable()
 export class S3Service {
-  private s3Client: S3Client;
-  private bucketName: string;
-  private cdnDomain?: string;
+  private readonly s3Client: S3Client;
+  private readonly bucketName: string;
+  private readonly cdnDomain?: string;
 
-  constructor(private configService: ConfigService) {
+  constructor(private readonly configService: ConfigService) {
     this.s3Client = new S3Client({
       region: this.configService.get("AWS_REGION") || "ap-south-1",
       credentials: {
@@ -53,9 +52,13 @@ export class S3Service {
     // Sanitize the client-supplied name: strip any path components and reduce
     // to a safe charset so the key can't contain "..", control chars, RTL
     // overrides or null bytes, and stays parseable by deleteFile().
-    const safeBase = basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, "_");
+    const safeBase = basename(file.originalname).replace(
+      /[^a-zA-Z0-9._-]/g,
+      "_",
+    );
     const ext = extname(safeBase).slice(0, 10);
-    const stem = safeBase.slice(0, safeBase.length - ext.length).slice(0, 80) || "file";
+    const stem =
+      safeBase.slice(0, safeBase.length - ext.length).slice(0, 80) || "file";
     const fileName = `${timestamp}-${stem}${ext}`;
     const key = folder ? `${folder}/${fileName}` : fileName;
 

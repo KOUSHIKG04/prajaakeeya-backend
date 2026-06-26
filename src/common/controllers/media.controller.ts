@@ -14,6 +14,7 @@ import {
   Query,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import type { Request } from "express";
 import {
   ApiTags,
   ApiOperation,
@@ -27,7 +28,7 @@ import {
 import { JwtAuthGuard } from "../guards/jwt-auth.guard";
 import { RolesGuard } from "../guards/roles.guard";
 import { Roles } from "../decorators/roles.decorator";
-import { CurrentUser } from "../decorators/current-user.decorator";
+import { CurrentUser, AuthUser } from "../decorators/current-user.decorator";
 import { MediaService } from "../services/media.service";
 import {
   UploadAspirantDocumentDto,
@@ -45,7 +46,9 @@ export class MediaController {
 
   @Get("presign")
   @Roles("admin")
-  @ApiOperation({ summary: "Get presigned URL for private S3 object (admin only)" })
+  @ApiOperation({
+    summary: "Get presigned URL for private S3 object (admin only)",
+  })
   @ApiQuery({
     name: "key",
     description: "S3 object key (e.g. profiles/20/file.jpg)",
@@ -61,7 +64,10 @@ export class MediaController {
     @Query("key") key: string,
     @Query("expires") expires?: string,
   ) {
-    const exp = expires ? parseInt(expires, 10) : 3600;
+    // Clamp the requested expiry to [60s, 1h]: rejects junk/NaN, prevents a
+    // long-lived (or effectively non-expiring) signed URL being minted.
+    const raw = expires ? parseInt(expires, 10) : 3600;
+    const exp = Math.min(Math.max(Number.isFinite(raw) ? raw : 3600, 60), 3600);
     const url = await this.mediaService.getPresignedUrl(key, exp);
     return { url, expiresIn: exp };
   }
@@ -89,7 +95,7 @@ export class MediaController {
   })
   @ApiResponse({ status: 401, description: "Unauthorized" })
   async uploadProfilePicture(
-    @Req() req: any,
+    @Req() req: Request & { user: AuthUser },
     @UploadedFile() file: Express.Multer.File,
   ) {
     const userId = req.user.id;
@@ -104,7 +110,7 @@ export class MediaController {
   })
   @ApiResponse({ status: 400, description: "No profile picture to delete" })
   @ApiResponse({ status: 401, description: "Unauthorized" })
-  async deleteProfilePicture(@Req() req: any) {
+  async deleteProfilePicture(@Req() req: Request & { user: AuthUser }) {
     return await this.mediaService.deleteProfilePicture(req.user.id);
   }
 
@@ -120,19 +126,7 @@ export class MediaController {
       properties: {
         documentType: {
           type: "string",
-          enum: [
-            "sop",
-            "sop_kannada",
-            "agreement",
-            "property_declaration",
-            "code_of_conduct",
-            "resume",
-            "epic_card",
-            "epic_card_back",
-            "address_proof",
-            "recent_photo",
-            "selfie",
-          ],
+          enum: ["sop", "recent_photo", "selfie"],
           description: "Type of document being uploaded",
         },
         file: {
@@ -146,7 +140,7 @@ export class MediaController {
   @ApiResponse({ status: 200, description: "Document uploaded successfully" })
   @ApiResponse({ status: 404, description: "Aspirant not found" })
   async uploadAspirantDocument(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthUser,
     @Param("aspirantId", ParseIntPipe) aspirantId: number,
     @Body() dto: UploadAspirantDocumentDto,
     @UploadedFile() file: Express.Multer.File,
@@ -172,19 +166,7 @@ export class MediaController {
   @ApiParam({
     name: "documentType",
     description: "Type of document to verify",
-    enum: [
-      "sop",
-      "sop_kannada",
-      "agreement",
-      "property_declaration",
-      "code_of_conduct",
-      "resume",
-      "epic_card",
-      "epic_card_back",
-      "address_proof",
-      "recent_photo",
-      "selfie",
-    ],
+    enum: ["sop", "recent_photo", "selfie"],
     example: "sop",
   })
   @ApiResponse({
@@ -311,7 +293,7 @@ export class MediaController {
   })
   @ApiResponse({ status: 404, description: "Admin document not found" })
   async signDocument(
-    @Req() req: any,
+    @Req() req: Request & { user: AuthUser },
     @Body() dto: SignDocumentDto,
     @UploadedFile() file: Express.Multer.File,
   ) {
@@ -330,7 +312,7 @@ export class MediaController {
     status: 200,
     description: "List of user's signed documents returned",
   })
-  async getUserSignedDocuments(@Req() req: any) {
+  async getUserSignedDocuments(@Req() req: Request & { user: AuthUser }) {
     const userId = req.user.id;
     return await this.mediaService.getUserSignedDocuments(userId);
   }
